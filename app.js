@@ -1,5 +1,32 @@
 // AETHER // Intelligent Desk Appliance Core
 
+// Zero-Touch URL Configuration Override (for seamless appliance provisioning)
+try {
+  const urlParams = new URLSearchParams(window.location.search);
+  let shouldCleanUrl = false;
+  if (urlParams.has('gemini_key') || urlParams.has('key')) {
+    const pKey = urlParams.get('gemini_key') || urlParams.get('key');
+    if (pKey) {
+      localStorage.setItem('aether_gemini_key', pKey);
+      shouldCleanUrl = true;
+    }
+  }
+  if (urlParams.has('city')) {
+    localStorage.setItem('aether_city', urlParams.get('city'));
+    shouldCleanUrl = true;
+  }
+  if (urlParams.has('wakeword')) {
+    localStorage.setItem('aether_wakeword', urlParams.get('wakeword'));
+    shouldCleanUrl = true;
+  }
+  if (shouldCleanUrl) {
+    const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+    window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+  }
+} catch (e) {
+  console.warn('URL param parse error:', e);
+}
+
 // Configuration & Local Persistence
 const CONFIG = {
   wakeWord: localStorage.getItem('aether_wakeword') || 'hey jarvis',
