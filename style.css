@@ -205,15 +205,48 @@ html, body {
   color: #fff;
 }
 
+/* Multi-Screen Swiper */
+.screens-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  min-height: 0;
+}
+
+.screens-container {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+
+.screens-container::-webkit-scrollbar {
+  display: none;
+}
+
+.screen-panel {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
 /* Grid Stage */
 .grid-stage {
   display: grid;
   grid-template-columns: 1.05fr 1fr;
   grid-template-rows: 1fr auto;
   gap: 20px;
-  flex: 1;
-  min-height: 0;
 }
+
+/* Map Overrides */
+.leaflet-control-attribution { background: rgba(0,0,0,0.5) !important; color: #fff !important; }
+.leaflet-control-attribution a { color: var(--accent-cyan) !important; }
 
 .bento-card {
   position: relative;

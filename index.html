@@ -14,6 +14,10 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   
+  <!-- Leaflet for Maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -48,168 +52,242 @@
       </div>
     </header>
 
-    <!-- Main Kinetic Dashboard -->
-    <main class="grid-stage">
-      <!-- Left Column: Chrono & Atmosphere -->
-      <section class="bento-card chrono-card" id="card-chrono">
-        <div class="card-glow"></div>
-        <div class="card-content">
-          <div class="chrono-header">
-            <span class="label-tag">CHRONOMETRY</span>
-            <span class="badge-accent" id="time-zone-badge">EST // UTC-4</span>
-          </div>
-
-          <div class="display-time-wrap">
-            <div class="time-main" id="time-display">--:--</div>
-            <div class="time-meta">
-              <span class="time-period" id="am-pm">--</span>
-              <span class="time-seconds" id="seconds-display">:00</span>
-            </div>
-          </div>
-
-          <div class="chrono-timeline">
-            <div class="timeline-bar">
-              <div class="timeline-fill" id="seconds-progress"></div>
-            </div>
-            <div class="chrono-date" id="date-display">Loading date...</div>
-          </div>
-
-          <!-- Weather Micro-Widget -->
-          <div class="atmosphere-box" id="atmosphere-box">
-            <div class="atmo-left">
-              <span class="atmo-icon" id="weather-icon">🌤️</span>
-              <div class="atmo-temp-block">
-                <span class="atmo-temp" id="weather-temp">--°</span>
-                <span class="atmo-condition" id="weather-desc">Detecting...</span>
+    <!-- Multi-Screen Viewport -->
+    <div class="screens-viewport">
+      <div class="screens-container" id="main-screens">
+        
+        <!-- SCREEN 1: All-In-One Dashboard -->
+        <main class="grid-stage screen-panel" id="screen-dashboard">
+          <!-- Left Column: Chrono & Atmosphere -->
+          <section class="bento-card chrono-card" id="card-chrono">
+            <div class="card-glow"></div>
+            <div class="card-content">
+              <div class="chrono-header">
+                <span class="label-tag">CHRONOMETRY</span>
+                <span class="badge-accent" id="time-zone-badge">EST // UTC-4</span>
               </div>
-            </div>
-            <div class="atmo-metrics">
-              <div class="metric">
-                <span class="m-lbl">HUMIDITY</span>
-                <span class="m-val" id="weather-humidity">--%</span>
-              </div>
-              <div class="metric">
-                <span class="m-lbl">WIND</span>
-                <span class="m-val" id="weather-wind">-- mph</span>
-              </div>
-              <div class="metric">
-                <span class="m-lbl">RANGE</span>
-                <span class="m-val" id="weather-highlow">--/--</span>
-              </div>
-            </div>
-            <div class="atmo-city" id="weather-city">Auto Geolocation</div>
-          </div>
-        </div>
-      </section>
 
-      <!-- Right Column: Sound Architecture -->
-      <section class="bento-card acoustic-card" id="card-acoustic">
-        <div class="card-glow"></div>
-        <div class="card-content">
-          <div class="acoustic-header">
-            <span class="label-tag">ACOUSTICS</span>
-            <span class="badge-accent">Dolby Atmos // 4-Way</span>
-          </div>
-
-          <!-- YouTube Music Native Launch Banner -->
-          <a href="intent://music.youtube.com/#Intent;package=com.google.android.apps.youtube.music;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end" class="ytm-gateway" id="ytm-launch-btn">
-            <div class="gateway-icon">
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="#ff2e56">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/>
-              </svg>
-            </div>
-            <div class="gateway-text">
-              <span class="gateway-title">YouTube Music</span>
-              <span class="gateway-desc">Access personal library, premium offline audio & mix</span>
-            </div>
-            <div class="gateway-action">
-              <span>LAUNCH</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </div>
-          </a>
-
-          <!-- Ambient Radio Matrix -->
-          <div class="radio-matrix">
-            <div class="matrix-title">STREAMING RADIALS</div>
-            <div class="matrix-grid">
-              <div class="matrix-tile" data-station="lofi">
-                <div class="tile-icon">☕</div>
-                <div class="tile-meta">
-                  <span class="tile-name">Chillhop</span>
-                  <span class="tile-status">Idle</span>
+              <div class="display-time-wrap">
+                <div class="time-main" id="time-display">--:--</div>
+                <div class="time-meta">
+                  <span class="time-period" id="am-pm">--</span>
+                  <span class="time-seconds" id="seconds-display">:00</span>
                 </div>
               </div>
-              <div class="matrix-tile" data-station="jazz">
-                <div class="tile-icon">🎷</div>
-                <div class="tile-meta">
-                  <span class="tile-name">Blue Note</span>
-                  <span class="tile-status">Idle</span>
+
+              <div class="chrono-timeline">
+                <div class="timeline-bar">
+                  <div class="timeline-fill" id="seconds-progress"></div>
+                </div>
+                <div class="chrono-date" id="date-display">Loading date...</div>
+              </div>
+
+              <!-- Weather Micro-Widget -->
+              <div class="atmosphere-box" id="atmosphere-box">
+                <div class="atmo-left">
+                  <span class="atmo-icon" id="weather-icon">🌤️</span>
+                  <div class="atmo-temp-block">
+                    <span class="atmo-temp" id="weather-temp">--°</span>
+                    <span class="atmo-condition" id="weather-desc">Detecting...</span>
+                  </div>
+                </div>
+                <div class="atmo-metrics">
+                  <div class="metric">
+                    <span class="m-lbl">HUMIDITY</span>
+                    <span class="m-val" id="weather-humidity">--%</span>
+                  </div>
+                  <div class="metric">
+                    <span class="m-lbl">WIND</span>
+                    <span class="m-val" id="weather-wind">-- mph</span>
+                  </div>
+                  <div class="metric">
+                    <span class="m-lbl">RANGE</span>
+                    <span class="m-val" id="weather-highlow">--/--</span>
+                  </div>
+                </div>
+                <div class="atmo-city" id="weather-city">Auto Geolocation</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Right Column: Sound Architecture -->
+          <section class="bento-card acoustic-card" id="card-acoustic">
+            <div class="card-glow"></div>
+            <div class="card-content">
+              <div class="acoustic-header">
+                <span class="label-tag">ACOUSTICS</span>
+                <span class="badge-accent">Dolby Atmos // 4-Way</span>
+              </div>
+
+              <!-- External Integrations -->
+              <div style="display: flex; gap: 12px; margin-top: 12px;">
+                <a href="intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.google.android.apps.youtube.music;end" class="ytm-gateway" id="ytm-launch-btn" style="flex: 1; margin-top: 0;">
+                  <div class="gateway-icon" style="width: 36px; height: 36px;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="#ff2e56">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/>
+                    </svg>
+                  </div>
+                  <div class="gateway-text">
+                    <span class="gateway-title" style="font-size: 1rem;">YT Music</span>
+                  </div>
+                </a>
+                
+                <a href="intent://#Intent;action=android.settings.BLUETOOTH_SETTINGS;end" class="ytm-gateway" id="bt-launch-btn" style="flex: 1; margin-top: 0; background: linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%); border-color: rgba(56, 189, 248, 0.25);">
+                  <div class="gateway-icon" style="width: 36px; height: 36px; background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.3);">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="#38bdf8">
+                      <path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/>
+                    </svg>
+                  </div>
+                  <div class="gateway-text">
+                    <span class="gateway-title" style="font-size: 1rem;">Bluetooth</span>
+                  </div>
+                </a>
+
+                <a href="intent://#Intent;action=android.settings.CAST_SETTINGS;end" class="ytm-gateway" id="cast-launch-btn" style="flex: 1; margin-top: 0; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%); border-color: rgba(16, 185, 129, 0.25);">
+                  <div class="gateway-icon" style="width: 36px; height: 36px; background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3);">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="#10b981">
+                      <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                    </svg>
+                  </div>
+                  <div class="gateway-text">
+                    <span class="gateway-title" style="font-size: 1rem;">Cast</span>
+                  </div>
+                </a>
+              </div>
+
+              <!-- Ambient Radio Matrix -->
+              <div class="radio-matrix">
+                <div class="matrix-title">SOMA FM AD-FREE RADIALS</div>
+                <div class="matrix-grid">
+                  <div class="matrix-tile" data-station="lofi">
+                    <div class="tile-icon">☕</div>
+                    <div class="tile-meta">
+                      <span class="tile-name">Groove Salad</span>
+                      <span class="tile-status">Idle</span>
+                    </div>
+                  </div>
+                  <div class="matrix-tile" data-station="jazz">
+                    <div class="tile-icon">🕵️</div>
+                    <div class="tile-meta">
+                      <span class="tile-name">Secret Agent</span>
+                      <span class="tile-status">Idle</span>
+                    </div>
+                  </div>
+                  <div class="matrix-tile" data-station="rain">
+                    <div class="tile-icon">🌌</div>
+                    <div class="tile-meta">
+                      <span class="tile-name">Drone Zone</span>
+                      <span class="tile-status">Idle</span>
+                    </div>
+                  </div>
+                  <div class="matrix-tile" data-station="synthwave">
+                    <div class="tile-icon">💻</div>
+                    <div class="tile-meta">
+                      <span class="tile-name">Def Con Radio</span>
+                      <span class="tile-status">Idle</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="matrix-tile" data-station="rain">
-                <div class="tile-icon">🌧️</div>
-                <div class="tile-meta">
-                  <span class="tile-name">Precipitation</span>
-                  <span class="tile-status">Idle</span>
+
+              <!-- Master Transport Bar -->
+              <div class="transport-dock">
+                <button id="btn-play-pause" class="btn-transport" disabled>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" id="play-icon"><path d="M8 5v14l11-7z"/></svg>
+                  <span id="play-text">PLAY</span>
+                </button>
+                <div class="transport-info">
+                  <span id="now-playing-title">Select an acoustic frequency</span>
+                </div>
+                <div class="volume-dock">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 9v6h4l5 5V4l-5 5H7z"/></svg>
+                  <input type="range" id="volume-slider" min="0" max="1" step="0.02" value="0.8">
                 </div>
               </div>
-              <div class="matrix-tile" data-station="synthwave">
-                <div class="tile-icon">🌌</div>
-                <div class="tile-meta">
-                  <span class="tile-name">Cyber Synth</span>
-                  <span class="tile-status">Idle</span>
+            </div>
+          </section>
+
+          <!-- Bottom Span: Intelligence & Cognitive Assistant -->
+          <section class="bento-card cognition-card" id="card-cognition">
+            <div class="card-glow"></div>
+            <div class="cognition-stage">
+              <!-- 3D / Interactive Orb Touch Anchor -->
+              <div class="c-orb-anchor" id="orb-trigger" title="Tap to awaken AI">
+                <div class="c-orb-rings">
+                  <div class="ring ring-1"></div>
+                  <div class="ring ring-2"></div>
+                  <div class="ring ring-3"></div>
                 </div>
+                <div class="c-orb-nucleus" id="ai-orb"></div>
+              </div>
+
+              <!-- Dialog & Speech Stream -->
+              <div class="c-dialog-stream">
+                <div class="c-response" id="assistant-response">"Awaiting voice wake trigger 'Hey Jarvis' or tactile engagement."</div>
+                <div class="c-input-transcript" id="user-speech">Listening in passive acoustic standby...</div>
+              </div>
+
+              <!-- Kinetic Action Chips -->
+              <div class="kinetic-chips">
+                <button class="k-chip" data-cmd="play lofi">▶ Lo-Fi</button>
+                <button class="k-cmd-chip" data-cmd="what is the weather">🌤️ Weather</button>
+                <button class="k-cmd-chip" data-cmd="give me a daily briefing">⚡ Briefing</button>
+                <button class="k-cmd-chip" data-cmd="stop music">⏹ Stop</button>
               </div>
             </div>
-          </div>
+          </section>
+        </main>
 
-          <!-- Master Transport Bar -->
-          <div class="transport-dock">
-            <button id="btn-play-pause" class="btn-transport" disabled>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" id="play-icon"><path d="M8 5v14l11-7z"/></svg>
-              <span id="play-text">PLAY</span>
-            </button>
-            <div class="transport-info">
-              <span id="now-playing-title">Select an acoustic frequency</span>
+        <!-- SCREEN 2: Deep Dive Content (Maps & Overlays) -->
+        <main class="grid-stage screen-panel" id="screen-maps" style="display: flex;">
+          <section class="bento-card full-card" style="flex: 1; padding: 0;">
+            <div class="map-header" style="position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.6); padding: 12px 20px; border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);">
+              <h3 style="font-family: var(--font-hero); margin-bottom: 8px;">LOCAL ATMOSPHERE</h3>
+              <div class="map-controls" style="display: flex; gap: 8px;">
+                <button class="k-chip map-layer-btn active" data-layer="radar">Precipitation Radar</button>
+                <button class="k-chip map-layer-btn" data-layer="clouds">Cloud Cover</button>
+                <button class="k-chip map-layer-btn" data-layer="temp">Temperature Heatmap</button>
+              </div>
             </div>
-            <div class="volume-dock">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 9v6h4l5 5V4l-5 5H7z"/></svg>
-              <input type="range" id="volume-slider" min="0" max="1" step="0.02" value="0.8">
+            <div id="map-container" style="width: 100%; height: 100%; border-radius: var(--radius-xl);"></div>
+          </section>
+        </main>
+
+        <!-- SCREEN 3: Full Assistant Workflow -->
+        <main class="grid-stage screen-panel" id="screen-assistant" style="display: flex; flex-direction: column;">
+          <section class="bento-card full-card" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+            <div class="card-glow"></div>
+            
+            <div class="full-orb-container" style="margin-bottom: 40px; transform: scale(2);">
+              <div class="c-orb-anchor listening" id="full-orb-trigger" style="pointer-events: none;">
+                <div class="c-orb-rings">
+                  <div class="ring ring-1"></div>
+                  <div class="ring ring-2"></div>
+                  <div class="ring ring-3"></div>
+                </div>
+                <div class="c-orb-nucleus"></div>
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      <!-- Bottom Span: Intelligence & Cognitive Assistant -->
-      <section class="bento-card cognition-card" id="card-cognition">
-        <div class="card-glow"></div>
-        <div class="cognition-stage">
-          <!-- 3D / Interactive Orb Touch Anchor -->
-          <div class="c-orb-anchor" id="orb-trigger" title="Tap to awaken AI">
-            <div class="c-orb-rings">
-              <div class="ring ring-1"></div>
-              <div class="ring ring-2"></div>
-              <div class="ring ring-3"></div>
+            <h2 id="full-assistant-response" style="font-size: 2.5rem; max-width: 80%; font-weight: 600; line-height: 1.3; margin-bottom: 20px;">Ready for Multimodal Intelligence.</h2>
+            <p id="full-user-speech" style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 1.2rem;">Tap the button below to authorize Continuous Audio & Microphone.</p>
+            
+            <div style="margin-top: 40px; display: flex; gap: 16px;">
+              <button id="btn-auth-mic" class="btn-hero" style="background: var(--accent-fuchsia); padding: 16px 32px; font-size: 1.1rem; border-radius: 30px; border: none; color: #fff; cursor: pointer; font-family: var(--font-hero); font-weight: 800;">AUTHORIZE ALWAYS-ON MICROPHONE</button>
+              <button id="btn-trigger-ai" class="btn-hero" style="background: var(--accent-cyan); padding: 16px 32px; font-size: 1.1rem; border-radius: 30px; border: none; color: #040810; cursor: pointer; display: none; font-family: var(--font-hero); font-weight: 800;">PUSH TO TALK (MULTIMODAL)</button>
             </div>
-            <div class="c-orb-nucleus" id="ai-orb"></div>
-          </div>
+          </section>
+        </main>
 
-          <!-- Dialog & Speech Stream -->
-          <div class="c-dialog-stream">
-            <div class="c-response" id="assistant-response">"Awaiting voice wake trigger 'Hey Jarvis' or tactile engagement."</div>
-            <div class="c-input-transcript" id="user-speech">Listening in passive acoustic standby...</div>
-          </div>
-
-          <!-- Kinetic Action Chips -->
-          <div class="kinetic-chips">
-            <button class="k-chip" data-cmd="play lofi">▶ Lo-Fi</button>
-            <button class="k-cmd-chip" data-cmd="what is the weather">🌤️ Weather</button>
-            <button class="k-cmd-chip" data-cmd="give me a daily briefing">⚡ Briefing</button>
-            <button class="k-cmd-chip" data-cmd="stop music">⏹ Stop</button>
-          </div>
-        </div>
-      </section>
-    </main>
+      </div>
+      
+      <!-- Pagination Controls -->
+      <div class="screen-pagination" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; z-index: 10;">
+        <div class="dot active" data-index="0" style="width: 10px; height: 10px; border-radius: 50%; background: var(--accent-cyan); cursor: pointer; transition: all 0.2s;"></div>
+        <div class="dot" data-index="1" style="width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.2); cursor: pointer; transition: all 0.2s;"></div>
+        <div class="dot" data-index="2" style="width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.2); cursor: pointer; transition: all 0.2s;"></div>
+      </div>
+    </div>
 
     <!-- Glassmorphic Settings & API Key Drawer -->
     <div class="modal-layer" id="settings-modal">

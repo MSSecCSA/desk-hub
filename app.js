@@ -50,10 +50,10 @@ let conversationHistory = [];
 
 // Audio Streams
 const STATIONS = {
-  lofi: { name: 'Chillhop Lo-Fi Radio', url: 'https://stream.zeno.fm/f3wvbbqmdg8uv' },
-  jazz: { name: 'Blue Note Coffeehouse Jazz', url: 'https://streaming.exclusive.radio/er/smoothjazz/icecast.audio' },
-  rain: { name: 'Precipitation Ambience', url: 'https://actions.google.com/sounds/v1/weather/rain_heavy.ogg', loop: true },
-  synthwave: { name: 'Cyberpunk Focus Synth', url: 'https://stream.zeno.fm/0r0xa792kwzuv' }
+  lofi: { name: 'SomaFM Groove Salad', url: 'https://ice6.somafm.com/groovesalad-256-mp3' },
+  jazz: { name: 'SomaFM Secret Agent', url: 'https://ice4.somafm.com/secretagent-256-mp3' },
+  rain: { name: 'SomaFM Drone Zone', url: 'https://ice4.somafm.com/dronezone-256-mp3' },
+  synthwave: { name: 'SomaFM Def Con Radio', url: 'https://ice6.somafm.com/defcon-256-mp3' }
 };
 
 // DOM References
@@ -456,7 +456,35 @@ function playHarmonicChime() {
 /* ==========================================================================
    7. Cognitive Intelligence & Wake-Word Architecture
    ========================================================================== */
-function speakResponse(text) {
+async function speakResponse(text) {
+  if (CONFIG.geminiKey) {
+    try {
+      // Premium Google Cloud Text-to-Speech (Journey Voice)
+      const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${CONFIG.geminiKey}`;
+      const payload = {
+        input: { text: text },
+        voice: { languageCode: 'en-US', name: 'en-US-Journey-F' }, // Studio quality AI voice
+        audioConfig: { audioEncoding: 'MP3', speakingRate: 1.05 }
+      };
+      
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      
+      if (data.audioContent) {
+        const audio = new Audio("data:audio/mp3;base64," + data.audioContent);
+        audio.play();
+        return; // Success, skip local fallback
+      }
+    } catch (e) {
+      console.warn("GCP TTS failed, falling back to local synthesis", e);
+    }
+  }
+
+  // Fallback to local Web Speech API
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
@@ -637,6 +665,39 @@ async function queryGeminiCloud(prompt, apiKey) {
   throw lastErr || new Error('Invalid response structure from Gemini API');
 }
 
+// Google Gemini Multimodal Audio Engine (Speech-to-Speech)
+async function queryGeminiCloudAudio(base64Audio, mimeType, apiKey) {
+  const payload = {
+    systemInstruction: {
+      parts: [{
+        text: "You are Aether. You are receiving raw audio input from the user. Transcribe their intent and respond back naturally in 1-2 concise sentences."
+      }]
+    },
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: mimeType, data: base64Audio } }
+        ]
+      }
+    ]
+  };
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || `API error ${data.error.code}`);
+  if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
+    return data.candidates[0].content.parts[0].text.trim();
+  }
+  throw new Error('Invalid response structure from Gemini Audio API');
+}
+
 // Continuous Wake-Word Speech Listener
 function initContinuousListener() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -693,7 +754,18 @@ function initContinuousListener() {
 initContinuousListener();
 
 // Orb Click Listener
-orbTrigger.addEventListener('click', () => {
+orbTrigger.addEventListener('click', async () => {
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      // Force microphone permission prompt on Android WebView
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // We don't need to keep the stream open, SpeechRecognition uses its own
+      stream.getTracks().forEach(track => track.stop());
+    }
+  } catch (err) {
+    console.warn('Microphone permission denied or unavailable:', err);
+    userSpeech.textContent = "Microphone permission required for wake word.";
+  }
   setWakeState(true);
 });
 
@@ -776,3 +848,183 @@ btnSaveSettings.addEventListener('click', () => {
   updateClock();
   fetchAtmosphere();
 });
+/* ==========================================================================
+   9. Multi-Screen Pagination Engine
+   ========================================================================== */
+const screensContainer = document.getElementById('main-screens');
+const dots = document.querySelectorAll('.screen-pagination .dot');
+
+if (screensContainer && dots.length > 0) {
+  screensContainer.addEventListener('scroll', () => {
+    const scrollLeft = screensContainer.scrollLeft;
+    const width = screensContainer.clientWidth;
+    const index = Math.round(scrollLeft / width);
+    dots.forEach((dot, i) => {
+      dot.classList.toggle('active', i === index);
+      dot.style.background = i === index ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.2)';
+    });
+  });
+
+  dots.forEach(dot => {
+    dot.addEventListener('click', () => {
+      const index = parseInt(dot.dataset.index);
+      const width = screensContainer.clientWidth;
+      screensContainer.scrollTo({ left: index * width, behavior: 'smooth' });
+    });
+  });
+}
+
+/* ==========================================================================
+   10. Atmosphere Deep Dive (Leaflet Maps + Weather Radar)
+   ========================================================================== */
+let map;
+let weatherLayer;
+
+function initAtmosphereMap() {
+  if (typeof L === 'undefined') return;
+  const container = document.getElementById('map-container');
+  if (!container) return;
+
+  map = L.map('map-container', {
+    zoomControl: false,
+    attributionControl: false
+  }).setView([40.7128, -74.0060], 6);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19
+  }).addTo(map);
+
+  setWeatherLayer('radar');
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      map.setView([pos.coords.latitude, pos.coords.longitude], 7);
+    });
+  }
+}
+
+function setWeatherLayer(type) {
+  if (weatherLayer) {
+    map.removeLayer(weatherLayer);
+  }
+  
+  fetch('https://api.rainviewer.com/public/weather-maps.json')
+    .then(res => res.json())
+    .then(data => {
+      const host = data.host;
+      let layerPath = '';
+      
+      if (type === 'radar') {
+        const past = data.radar.past;
+        layerPath = `${past[past.length - 1].path}/256/{z}/{x}/{y}/2/1_1.png`;
+      } else if (type === 'clouds' || type === 'temp') {
+        // Use infrared satellite for clouds
+        const infrared = data.satellite.infrared;
+        layerPath = `${infrared[infrared.length - 1].path}/256/{z}/{x}/{y}/0/0_0.png`;
+      }
+      
+      weatherLayer = L.tileLayer(`${host}${layerPath}`, {
+        opacity: 0.65,
+        zIndex: 10
+      }).addTo(map);
+    }).catch(err => console.warn('Radar fetch failed', err));
+}
+
+document.querySelectorAll('.map-layer-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    document.querySelectorAll('.map-layer-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+    setWeatherLayer(e.target.dataset.layer);
+  });
+});
+
+setTimeout(initAtmosphereMap, 2000); // Defer map loading slightly
+
+/* ==========================================================================
+   11. Full Screen Assistant Trust Workflow
+   ========================================================================== */
+const btnAuthMic = document.getElementById('btn-auth-mic');
+const btnTriggerAi = document.getElementById('btn-trigger-ai');
+const fullOrbTrigger = document.getElementById('full-orb-trigger');
+
+if (btnAuthMic) {
+  btnAuthMic.addEventListener('click', async () => {
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+        
+        document.getElementById('full-assistant-response').textContent = "Microphone Authorized. Cognitive Link Established.";
+        document.getElementById('full-user-speech').textContent = "Always-listening subsystem is now active in background.";
+        
+        btnAuthMic.style.display = 'none';
+        btnTriggerAi.style.display = 'block';
+        fullOrbTrigger.style.pointerEvents = 'auto';
+        
+        try { recognition.start(); } catch(e) {} // kickstart continuous listening
+      }
+    } catch (err) {
+      document.getElementById('full-assistant-response').textContent = "Authorization Failed.";
+      document.getElementById('full-user-speech').textContent = "Check OS-level app permissions for microphone.";
+    }
+  });
+
+  let assistantMediaRecorder;
+  let assistantAudioChunks = [];
+
+  function startPtt(e) {
+    e.preventDefault();
+    if (!CONFIG.geminiKey) {
+      alert("Please set Gemini API Key in Settings first.");
+      return;
+    }
+    btnTriggerAi.textContent = "LISTENING... (RELEASE TO SEND)";
+    btnTriggerAi.style.background = "var(--accent-fuchsia)";
+    fullOrbTrigger.classList.add('listening');
+    document.getElementById('full-user-speech').textContent = "Capturing high-fidelity audio...";
+    
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      assistantMediaRecorder = new MediaRecorder(stream);
+      assistantMediaRecorder.ondataavailable = ev => { if(ev.data.size > 0) assistantAudioChunks.push(ev.data); };
+      assistantMediaRecorder.onstop = () => {
+        const blob = new Blob(assistantAudioChunks, { type: assistantMediaRecorder.mimeType });
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const b64 = reader.result.split(',')[1];
+          document.getElementById('full-user-speech').textContent = "Audio captured. Routing to Gemini Multimodal Model...";
+          try {
+            const reply = await queryGeminiCloudAudio(b64, assistantMediaRecorder.mimeType, CONFIG.geminiKey);
+            document.getElementById('full-assistant-response').textContent = reply;
+            speakResponse(reply);
+          } catch(err) {
+            document.getElementById('full-assistant-response').textContent = "Audio processing failed. Try again.";
+            console.error(err);
+          }
+        };
+        reader.readAsDataURL(blob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+      assistantAudioChunks = [];
+      assistantMediaRecorder.start();
+    }).catch(err => console.warn("Mic error", err));
+  }
+
+  function stopPtt(e) {
+    e.preventDefault();
+    btnTriggerAi.textContent = "PUSH TO TALK (MULTIMODAL)";
+    btnTriggerAi.style.background = "var(--accent-cyan)";
+    fullOrbTrigger.classList.remove('listening');
+    if (assistantMediaRecorder && assistantMediaRecorder.state === 'recording') {
+      assistantMediaRecorder.stop();
+    }
+  }
+
+  btnTriggerAi.addEventListener('mousedown', startPtt);
+  btnTriggerAi.addEventListener('touchstart', startPtt, { passive: false });
+  
+  btnTriggerAi.addEventListener('mouseup', stopPtt);
+  btnTriggerAi.addEventListener('touchend', stopPtt, { passive: false });
+  
+  // Also keep the simple orb click for the regular text-based wake
+  fullOrbTrigger.addEventListener('click', () => { setWakeState(true); });
+}
