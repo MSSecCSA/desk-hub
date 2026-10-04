@@ -581,7 +581,7 @@ async function queryGeminiCloud(prompt, apiKey) {
     contents: conversationHistory
   };
 
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  const models = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash-lite'];
   let lastErr = null;
   for (const model of models) {
     try {
