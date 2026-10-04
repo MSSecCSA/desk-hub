@@ -218,10 +218,8 @@ html, body {
   display: flex;
   width: 100%;
   height: 100%;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
+  overflow-x: hidden;
   scrollbar-width: none;
-  scroll-behavior: smooth;
 }
 
 .screens-container::-webkit-scrollbar {

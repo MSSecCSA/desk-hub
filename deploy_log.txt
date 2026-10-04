@@ -1,2 +1,10 @@
 === Deployment Started: Sun Oct  4 14:54:02 EDT 2026 ===
 Staging files...
+Committing...
+error: Signing file /var/folders/2p/4d7ycy5n27x75_8mb2qrhs_40000gn/T//.git_signing_buffer_tmpRdCmJz
+Confirm user presence for key ED25519-SK SHA256:1Sj9DyV8p/aUi9j6izCQ4JA5B43PJ56XtlbWI4fypNg
+Couldn't sign message: device not found?
+Signing /var/folders/2p/4d7ycy5n27x75_8mb2qrhs_40000gn/T//.git_signing_buffer_tmpRdCmJz failed: device not found?
+
+fatal: failed to write commit object
+Deployment SUCCESS!

@@ -754,17 +754,12 @@ function initContinuousListener() {
 initContinuousListener();
 
 // Orb Click Listener
-orbTrigger.addEventListener('click', async () => {
-  try {
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      // Force microphone permission prompt on Android WebView
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // We don't need to keep the stream open, SpeechRecognition uses its own
-      stream.getTracks().forEach(track => track.stop());
-    }
-  } catch (err) {
-    console.warn('Microphone permission denied or unavailable:', err);
-    userSpeech.textContent = "Microphone permission required for wake word.";
+orbTrigger.addEventListener('click', () => {
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    // Fire and forget, don't await, Android WebView might hang the promise silently
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => stream.getTracks().forEach(track => track.stop()))
+      .catch(err => console.warn('Mic check failed', err));
   }
   setWakeState(true);
 });
@@ -855,21 +850,46 @@ const screensContainer = document.getElementById('main-screens');
 const dots = document.querySelectorAll('.screen-pagination .dot');
 
 if (screensContainer && dots.length > 0) {
-  screensContainer.addEventListener('scroll', () => {
-    const scrollLeft = screensContainer.scrollLeft;
-    const width = screensContainer.clientWidth;
-    const index = Math.round(scrollLeft / width);
+  let currentScreen = 0;
+  let touchStartX = 0;
+
+  function updatePagination() {
     dots.forEach((dot, i) => {
-      dot.classList.toggle('active', i === index);
-      dot.style.background = i === index ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.2)';
+      dot.classList.toggle('active', i === currentScreen);
+      dot.style.background = i === currentScreen ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.2)';
     });
-  });
+  }
+
+  function goToScreen(index) {
+    currentScreen = index;
+    const width = screensContainer.clientWidth;
+    if (typeof gsap !== 'undefined') {
+      gsap.to(screensContainer, { scrollLeft: index * width, duration: 0.45, ease: 'power3.out' });
+    } else {
+      screensContainer.scrollLeft = index * width;
+    }
+    updatePagination();
+  }
+
+  // Robust JS swipe handler for Android Kiosk WebViews
+  screensContainer.addEventListener('touchstart', e => {
+    touchStartX = e.changedTouches[0].screenX;
+  }, { passive: true });
+
+  screensContainer.addEventListener('touchend', e => {
+    const touchEndX = e.changedTouches[0].screenX;
+    const swipeDist = touchStartX - touchEndX;
+    
+    if (swipeDist > 50 && currentScreen < dots.length - 1) {
+      goToScreen(currentScreen + 1); // Swipe left -> next screen
+    } else if (swipeDist < -50 && currentScreen > 0) {
+      goToScreen(currentScreen - 1); // Swipe right -> prev screen
+    }
+  }, { passive: true });
 
   dots.forEach(dot => {
     dot.addEventListener('click', () => {
-      const index = parseInt(dot.dataset.index);
-      const width = screensContainer.clientWidth;
-      screensContainer.scrollTo({ left: index * width, behavior: 'smooth' });
+      goToScreen(parseInt(dot.dataset.index));
     });
   });
 }
