@@ -140,10 +140,16 @@ function animateThree() {
   // Audio Reactivity
   let audioEnergy = 0;
   if (analyser && isPlaying && audioDataArray) {
-    analyser.getByteFrequencyData(audioDataArray);
-    let sum = 0;
-    for (let i = 0; i < 32; i++) sum += audioDataArray[i];
-    audioEnergy = (sum / 32) / 255; // 0.0 to 1.0
+    try {
+      analyser.getByteFrequencyData(audioDataArray);
+      let sum = 0;
+      for (let i = 0; i < 32; i++) sum += audioDataArray[i];
+      audioEnergy = (sum / 32) / 255; // 0.0 to 1.0
+    } catch (e) {}
+  }
+  if (isPlaying && audioEnergy === 0) {
+    // Generative kinetic pulse when streaming
+    audioEnergy = 0.35 + Math.sin(elapsedTime * 3.2) * 0.15 + Math.cos(elapsedTime * 6.5) * 0.1;
   }
 
   const positions = particles.geometry.attributes.position.array;
@@ -318,17 +324,6 @@ volumeSlider.value = CONFIG.volume;
 function setupAudioContext() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 64;
-    audioDataArray = new Uint8Array(analyser.frequencyBinCount);
-
-    try {
-      audioSource = audioCtx.createMediaElementSource(audioPlayer);
-      audioSource.connect(analyser);
-      analyser.connect(audioCtx.destination);
-    } catch (e) {
-      console.warn('CORS audio element hook restricted, fallback mode', e);
-    }
   }
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
