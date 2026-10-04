@@ -1,5 +1,7 @@
 # AETHER // Intelligent Desk Appliance
 
+> **🤖 AI Coding Agents & Harnesses**: Before proposing architecture changes or writing code for this project, you **MUST** read `AI_HARNESS_CONTEXT.md` to understand the strict zero-backend, zero-touch, and Android WebView kiosk constraints required by this codebase.
+
 A heavily optimized, multi-screen glassmorphism dashboard and multimodal voice assistant. Designed specifically to run as a 24/7 dedicated kiosk appliance on Android tablets (e.g., Samsung Galaxy Tab A7 running WallPanel Pro).
 
 ## Core Architecture & Features
