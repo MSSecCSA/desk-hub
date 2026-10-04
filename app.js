@@ -567,9 +567,6 @@ async function executeCognitiveQuery(cmd) {
 
 // Google Gemini API Engine
 async function queryGeminiCloud(prompt, apiKey) {
-  // Use Gemini 2.0 Flash or 1.5 Flash
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-  
   conversationHistory.push({
     role: "user",
     parts: [{ text: prompt }]
@@ -589,22 +586,33 @@ async function queryGeminiCloud(prompt, apiKey) {
     contents: conversationHistory
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  const data = await res.json();
-  if (data.candidates && data.candidates[0].content.parts[0].text) {
-    const text = data.candidates[0].content.parts[0].text.trim();
-    conversationHistory.push({
-      role: "model",
-      parts: [{ text }]
-    });
-    return text;
+  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  let lastErr = null;
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.error) {
+        throw new Error(data.error.message || `API error ${data.error.code}`);
+      }
+      if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
+        const text = data.candidates[0].content.parts[0].text.trim();
+        conversationHistory.push({
+          role: "model",
+          parts: [{ text }]
+        });
+        return text;
+      }
+    } catch (err) {
+      lastErr = err;
+    }
   }
-  throw new Error('Invalid response structure from Gemini API');
+  throw lastErr || new Error('Invalid response structure from Gemini API');
 }
 
 // Continuous Wake-Word Speech Listener
