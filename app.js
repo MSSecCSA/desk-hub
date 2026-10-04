@@ -1,88 +1,229 @@
-// Desk Hub & Audio Station App Logic
+// AETHER // Intelligent Desk Appliance Core
 
-// Default Configurations
+// Configuration & Local Persistence
 const CONFIG = {
-  wakeWord: localStorage.getItem('hub_wakeword') || 'hey jarvis',
-  geminiKey: localStorage.getItem('hub_gemini_key') || '',
-  customCity: localStorage.getItem('hub_city') || '',
-  use24h: localStorage.getItem('hub_24h') === 'true',
-  volume: parseFloat(localStorage.getItem('hub_volume') || '0.8')
+  wakeWord: localStorage.getItem('aether_wakeword') || 'hey jarvis',
+  geminiKey: localStorage.getItem('aether_gemini_key') || '',
+  customCity: localStorage.getItem('aether_city') || '',
+  use24h: localStorage.getItem('aether_24h') === 'true',
+  volume: parseFloat(localStorage.getItem('aether_volume') || '0.8')
 };
 
-// State
+// Global State
+let audioCtx = null;
+let analyser = null;
+let audioSource = null;
+let audioDataArray = null;
 let isPlaying = false;
 let currentStation = null;
 let isAwake = false;
 let recognition = null;
 let wakeTimer = null;
-let audioCtx = null;
+let conversationHistory = [];
 
-// Ambient Audio Streams
+// Audio Streams
 const STATIONS = {
-  lofi: {
-    name: 'Lofi Chillhop Radio',
-    url: 'https://stream.zeno.fm/f3wvbbqmdg8uv'
-  },
-  jazz: {
-    name: 'Smooth Coffeehouse Jazz',
-    url: 'https://streaming.exclusive.radio/er/smoothjazz/icecast.audio'
-  },
-  rain: {
-    name: 'Gentle Rainstorm & Thunder',
-    url: 'https://actions.google.com/sounds/v1/weather/rain_heavy.ogg',
-    loop: true
-  },
-  synthwave: {
-    name: 'Deep Focus Synthwave',
-    url: 'https://stream.zeno.fm/0r0xa792kwzuv'
-  }
+  lofi: { name: 'Chillhop Lo-Fi Radio', url: 'https://stream.zeno.fm/f3wvbbqmdg8uv' },
+  jazz: { name: 'Blue Note Coffeehouse Jazz', url: 'https://streaming.exclusive.radio/er/smoothjazz/icecast.audio' },
+  rain: { name: 'Precipitation Ambience', url: 'https://actions.google.com/sounds/v1/weather/rain_heavy.ogg', loop: true },
+  synthwave: { name: 'Cyberpunk Focus Synth', url: 'https://stream.zeno.fm/0r0xa792kwzuv' }
 };
 
-// DOM Elements
+// DOM References
 const timeDisplay = document.getElementById('time-display');
 const amPmDisplay = document.getElementById('am-pm');
+const secondsDisplay = document.getElementById('seconds-display');
 const secondsProgress = document.getElementById('seconds-progress');
 const dateDisplay = document.getElementById('date-display');
+const miniDate = document.getElementById('mini-date');
 
 const weatherTemp = document.getElementById('weather-temp');
 const weatherDesc = document.getElementById('weather-desc');
 const weatherIcon = document.getElementById('weather-icon');
 const weatherHumidity = document.getElementById('weather-humidity');
 const weatherWind = document.getElementById('weather-wind');
-const weatherHighLow = document.getElementById('weather-highlow');
+const weatherHighlow = document.getElementById('weather-highlow');
 const weatherCity = document.getElementById('weather-city');
 
 const audioPlayer = document.getElementById('audio-player');
 const btnPlayPause = document.getElementById('btn-play-pause');
-const volumeSlider = document.getElementById('volume-slider');
+const playText = document.getElementById('play-text');
 const nowPlayingTitle = document.getElementById('now-playing-title');
-const visualizer = document.getElementById('visualizer');
-const stationButtons = document.querySelectorAll('.station-btn');
+const volumeSlider = document.getElementById('volume-slider');
+const matrixTiles = document.querySelectorAll('.matrix-tile');
 
-const aiOrb = document.getElementById('ai-orb');
-const orbTrigger = document.getElementById('orb-trigger');
+const voiceIndicator = document.getElementById('voice-indicator');
 const wakeStatusText = document.getElementById('wake-status-text');
 const assistantResponse = document.getElementById('assistant-response');
-const userSpeechDisplay = document.getElementById('user-speech');
+const userSpeech = document.getElementById('user-speech');
+const orbTrigger = document.getElementById('orb-trigger');
 
 const btnSettings = document.getElementById('btn-settings');
 const settingsModal = document.getElementById('settings-modal');
 const modalClose = document.getElementById('modal-close');
 const btnSaveSettings = document.getElementById('btn-save-settings');
-const cfgWakewordInput = document.getElementById('cfg-wakeword');
-const cfgGeminiInput = document.getElementById('cfg-gemini-key');
-const cfgCityInput = document.getElementById('cfg-city');
-const cfg24hInput = document.getElementById('cfg-24h');
+const cfgWakeword = document.getElementById('cfg-wakeword');
+const cfgGeminiKey = document.getElementById('cfg-gemini-key');
+const cfgCity = document.getElementById('cfg-city');
+const cfg24h = document.getElementById('cfg-24h');
+const geminiStatus = document.getElementById('gemini-status');
+const btnTestGemini = document.getElementById('btn-test-gemini');
 
 /* ==========================================================================
-   1. Clock & Date Engine
+   1. Three.js 3D Kinetic Background Engine
+   ========================================================================== */
+let scene, camera, renderer, particles, particlePositions, particleVelocities;
+const PARTICLE_COUNT = 1400;
+let shockwaveRadius = 0;
+let shockwaveActive = false;
+
+function initThreeScene() {
+  const canvas = document.getElementById('webgl-canvas');
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x06080d, 0.0018);
+
+  camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 1, 2000);
+  camera.position.z = 700;
+  camera.position.y = 120;
+
+  renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  // Kinetic Particle Lattice
+  const geometry = new THREE.BufferGeometry();
+  particlePositions = new Float32Array(PARTICLE_COUNT * 3);
+  particleVelocities = new Float32Array(PARTICLE_COUNT);
+
+  const rangeX = 1800;
+  const rangeY = 900;
+  const rangeZ = 1000;
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const i3 = i * 3;
+    particlePositions[i3] = (Math.random() - 0.5) * rangeX;
+    particlePositions[i3 + 1] = (Math.random() - 0.5) * rangeY - 100;
+    particlePositions[i3 + 2] = (Math.random() - 0.5) * rangeZ;
+    particleVelocities[i] = Math.random() * 0.02 + 0.005;
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+
+  // Subtle cyan-indigo particle material
+  const material = new THREE.PointsMaterial({
+    color: 0x38bdf8,
+    size: 3.2,
+    transparent: true,
+    opacity: 0.75,
+    blending: THREE.AdditiveBlending
+  });
+
+  particles = new THREE.Points(geometry, material);
+  scene.add(particles);
+
+  window.addEventListener('resize', onWindowResize, false);
+  animateThree();
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+let clock = new THREE.Clock();
+
+function animateThree() {
+  requestAnimationFrame(animateThree);
+  const elapsedTime = clock.getElapsedTime();
+
+  // Audio Reactivity
+  let audioEnergy = 0;
+  if (analyser && isPlaying && audioDataArray) {
+    analyser.getByteFrequencyData(audioDataArray);
+    let sum = 0;
+    for (let i = 0; i < 32; i++) sum += audioDataArray[i];
+    audioEnergy = (sum / 32) / 255; // 0.0 to 1.0
+  }
+
+  const positions = particles.geometry.attributes.position.array;
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const i3 = i * 3;
+    const x = positions[i3];
+    const z = positions[i3 + 2];
+
+    // Undulating 3D wave mathematics
+    const wave = Math.sin(x * 0.003 + elapsedTime * 1.2) * Math.cos(z * 0.003 + elapsedTime * 0.8) * (35 + audioEnergy * 70);
+    positions[i3 + 1] = wave - 120;
+
+    // Shockwave ripple when AI is awakened
+    if (shockwaveActive) {
+      const dist = Math.sqrt(x * x + z * z);
+      const diff = Math.abs(dist - shockwaveRadius);
+      if (diff < 90) {
+        positions[i3 + 1] += Math.sin((diff / 90) * Math.PI) * 50;
+      }
+    }
+  }
+
+  if (shockwaveActive) {
+    shockwaveRadius += 16;
+    if (shockwaveRadius > 1400) {
+      shockwaveActive = false;
+      shockwaveRadius = 0;
+    }
+  }
+
+  particles.geometry.attributes.position.needsUpdate = true;
+  particles.rotation.y = elapsedTime * 0.025;
+
+  renderer.render(scene, camera);
+}
+
+function trigger3DShockwave() {
+  shockwaveActive = true;
+  shockwaveRadius = 0;
+}
+
+initThreeScene();
+
+/* ==========================================================================
+   2. GSAP Entrance Timeline & Micro-Interactions
+   ========================================================================== */
+function runEntranceAnimations() {
+  const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+
+  tl.from('.top-nav', {
+    y: -30,
+    opacity: 0,
+    duration: 0.9
+  })
+  .from('.bento-card', {
+    y: 40,
+    opacity: 0,
+    scale: 0.96,
+    duration: 1.0,
+    stagger: 0.12
+  }, '-=0.5')
+  .from('.display-time-wrap', {
+    scale: 0.9,
+    opacity: 0,
+    duration: 0.8
+  }, '-=0.6');
+}
+
+window.addEventListener('DOMContentLoaded', runEntranceAnimations);
+
+/* ==========================================================================
+   3. Chrono Engine
    ========================================================================== */
 function updateClock() {
   const now = new Date();
   let hours = now.getHours();
   const minutes = String(now.getMinutes()).padStart(2, '0');
   const seconds = now.getSeconds();
-  
+
   if (CONFIG.use24h) {
     timeDisplay.textContent = `${String(hours).padStart(2, '0')}:${minutes}`;
     amPmDisplay.textContent = '24H';
@@ -94,141 +235,152 @@ function updateClock() {
     amPmDisplay.textContent = ampm;
   }
 
-  // Seconds Progress (0 to 60)
-  const percent = ((seconds + now.getMilliseconds() / 1000) / 60) * 100;
-  secondsProgress.style.width = `${percent}%`;
+  secondsDisplay.textContent = `:${String(seconds).padStart(2, '0')}`;
 
-  // Date String
-  const options = { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' };
-  dateDisplay.textContent = now.toLocaleDateString(undefined, options);
+  const pct = ((seconds + now.getMilliseconds() / 1000) / 60) * 100;
+  secondsProgress.style.width = `${pct}%`;
+
+  const dateOpts = { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' };
+  const dateStr = now.toLocaleDateString(undefined, dateOpts);
+  dateDisplay.textContent = dateStr;
+  miniDate.textContent = now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-setInterval(updateClock, 500);
+setInterval(updateClock, 250);
 updateClock();
 
 /* ==========================================================================
-   2. Weather Engine (Open-Meteo - 100% Free, No API Key Required)
+   4. Weather & Atmosphere Engine (Open-Meteo)
    ========================================================================== */
 const WMO_CODES = {
   0: { desc: 'Clear sky', icon: '☀️' },
   1: { desc: 'Mainly clear', icon: '🌤️' },
   2: { desc: 'Partly cloudy', icon: '⛅' },
   3: { desc: 'Overcast', icon: '☁️' },
-  45: { desc: 'Foggy', icon: '🌫️' },
-  48: { desc: 'Depositing rime fog', icon: '🌫️' },
+  45: { desc: 'Dense fog', icon: '🌫️' },
   51: { desc: 'Light drizzle', icon: '🌦️' },
-  53: { desc: 'Moderate drizzle', icon: '🌧️' },
-  55: { desc: 'Dense drizzle', icon: '🌧️' },
-  61: { desc: 'Slight rain', icon: '🌦️' },
-  63: { desc: 'Moderate rain', icon: '🌧️' },
+  61: { desc: 'Slight rain', icon: '🌧️' },
   65: { desc: 'Heavy rain', icon: '⛈️' },
-  71: { desc: 'Slight snow', icon: '🌨️' },
-  73: { desc: 'Moderate snow', icon: '❄️' },
-  75: { desc: 'Heavy snow', icon: '❄️' },
-  80: { desc: 'Rain showers', icon: '🌦️' },
+  71: { desc: 'Light snow', icon: '🌨️' },
   95: { desc: 'Thunderstorm', icon: '⚡' }
 };
 
-async function fetchWeather() {
+async function fetchAtmosphere() {
   try {
     let lat = 40.7128;
     let lon = -74.0060;
-    let cityName = 'Auto Location';
+    let cityLabel = 'Auto Geolocation';
 
-    // Auto-location via IP
     try {
-      const geoRes = await fetch('https://ipapi.co/json/');
-      if (geoRes.ok) {
-        const geoData = await geoRes.json();
-        lat = geoData.latitude || lat;
-        lon = geoData.longitude || lon;
-        cityName = `${geoData.city || 'Local Area'}, ${geoData.region_code || ''}`;
+      const geo = await fetch('https://ipapi.co/json/');
+      if (geo.ok) {
+        const d = await geo.json();
+        lat = d.latitude || lat;
+        lon = d.longitude || lon;
+        cityLabel = `${d.city || 'Local'}, ${d.region_code || ''}`;
       }
     } catch (e) {
-      console.warn('IP location fetch failed, using fallback coords', e);
+      console.warn('IP geoloc fallback', e);
     }
 
-    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto`;
-    const res = await fetch(weatherUrl);
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto`;
+    const res = await fetch(url);
     const data = await res.json();
 
-    const current = data.current;
+    const curr = data.current;
     const daily = data.daily;
-    const code = current.weather_code;
-    const weatherInfo = WMO_CODES[code] || { desc: 'Fair', icon: '🌤️' };
+    const info = WMO_CODES[curr.weather_code] || { desc: 'Fair', icon: '🌤️' };
 
-    weatherTemp.textContent = `${Math.round(current.temperature_2m)}°`;
-    weatherDesc.textContent = weatherInfo.desc;
-    weatherIcon.textContent = weatherInfo.icon;
-    weatherHumidity.textContent = `${current.relative_humidity_2m}%`;
-    weatherWind.textContent = `${Math.round(current.wind_speed_10m)} mph`;
-    
-    if (daily && daily.temperature_2m_max && daily.temperature_2m_min) {
-      weatherHighLow.textContent = `${Math.round(daily.temperature_2m_max[0])}° / ${Math.round(daily.temperature_2m_min[0])}°`;
+    weatherTemp.textContent = `${Math.round(curr.temperature_2m)}°`;
+    weatherDesc.textContent = info.desc;
+    weatherIcon.textContent = info.icon;
+    weatherHumidity.textContent = `${curr.relative_humidity_2m}%`;
+    weatherWind.textContent = `${Math.round(curr.wind_speed_10m)} mph`;
+    if (daily && daily.temperature_2m_max) {
+      weatherHighlow.textContent = `${Math.round(daily.temperature_2m_max[0])}°/${Math.round(daily.temperature_2m_min[0])}°`;
     }
-    weatherCity.textContent = cityName;
+    weatherCity.textContent = cityLabel;
   } catch (err) {
-    console.error('Weather load error:', err);
+    console.warn('Atmosphere load failure:', err);
     weatherDesc.textContent = 'Weather Unavailable';
   }
 }
 
-fetchWeather();
-setInterval(fetchWeather, 30 * 60 * 1000); // Refresh every 30 mins
+fetchAtmosphere();
+setInterval(fetchAtmosphere, 30 * 60 * 1000);
 
 /* ==========================================================================
-   3. Audio Hub & Ambient Stations
+   5. Acoustic Engine (Web Audio API & Stream Manager)
    ========================================================================== */
 audioPlayer.volume = CONFIG.volume;
 volumeSlider.value = CONFIG.volume;
 
+function setupAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 64;
+    audioDataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    try {
+      audioSource = audioCtx.createMediaElementSource(audioPlayer);
+      audioSource.connect(analyser);
+      analyser.connect(audioCtx.destination);
+    } catch (e) {
+      console.warn('CORS audio element hook restricted, fallback mode', e);
+    }
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
 function playStation(key) {
+  setupAudioContext();
   const station = STATIONS[key];
   if (!station) return;
 
   currentStation = key;
   audioPlayer.src = station.url;
   audioPlayer.loop = !!station.loop;
-  
+
   audioPlayer.play()
     .then(() => {
       isPlaying = true;
       btnPlayPause.disabled = false;
-      btnPlayPause.textContent = '⏸ Pause';
+      playText.textContent = 'PAUSE';
       nowPlayingTitle.textContent = `Streaming: ${station.name}`;
-      visualizer.classList.add('playing');
-      
-      stationButtons.forEach(btn => {
-        const isCurrent = btn.dataset.station === key;
-        btn.classList.toggle('active', isCurrent);
-        btn.querySelector('.station-state').textContent = isCurrent ? 'Playing' : 'Ready';
+
+      matrixTiles.forEach(tile => {
+        const isSelected = tile.dataset.station === key;
+        tile.classList.toggle('active', isSelected);
+        tile.querySelector('.tile-status').textContent = isSelected ? 'Streaming' : 'Idle';
       });
     })
     .catch(err => {
-      console.error('Playback error:', err);
-      nowPlayingTitle.textContent = `Error playing ${station.name}`;
+      console.error('Audio playback error', err);
+      nowPlayingTitle.textContent = `Error connecting to ${station.name}`;
     });
 }
 
 function stopAudio() {
   audioPlayer.pause();
   isPlaying = false;
-  btnPlayPause.textContent = '▶ Play';
-  visualizer.classList.remove('playing');
-  stationButtons.forEach(btn => {
-    btn.classList.remove('active');
-    btn.querySelector('.station-state').textContent = 'Ready';
+  playText.textContent = 'PLAY';
+  matrixTiles.forEach(tile => {
+    tile.classList.remove('active');
+    tile.querySelector('.tile-status').textContent = 'Idle';
   });
-  nowPlayingTitle.textContent = 'Playback paused';
+  nowPlayingTitle.textContent = 'Acoustic playback paused';
 }
 
-stationButtons.forEach(btn => {
-  btn.addEventListener('click', () => {
-    const stationKey = btn.dataset.station;
-    if (currentStation === stationKey && isPlaying) {
+matrixTiles.forEach(tile => {
+  tile.addEventListener('click', () => {
+    const key = tile.dataset.station;
+    if (currentStation === key && isPlaying) {
       stopAudio();
     } else {
-      playStation(stationKey);
+      playStation(key);
     }
   });
 });
@@ -245,185 +397,196 @@ volumeSlider.addEventListener('input', (e) => {
   const val = parseFloat(e.target.value);
   audioPlayer.volume = val;
   CONFIG.volume = val;
-  localStorage.setItem('hub_volume', val);
+  localStorage.setItem('aether_volume', val);
 });
 
 /* ==========================================================================
-   4. Audio Chime Synthesizer (Instant On-Device Feedback)
+   6. On-Device Chime Synthesizer
    ========================================================================== */
-function playWakeChime() {
+function playHarmonicChime() {
   try {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
+    setupAudioContext();
     const osc1 = audioCtx.createOscillator();
     const osc2 = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
+    const gain = audioCtx.createGain();
 
     osc1.type = 'sine';
-    osc2.type = 'sine';
-    osc1.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
-    osc2.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.1); // A5
+    osc2.type = 'triangle';
+    osc1.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+    osc2.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.08); // G5
 
-    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+    gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.45);
 
-    osc1.connect(gainNode);
-    osc2.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(audioCtx.destination);
 
     osc1.start();
     osc2.start(audioCtx.currentTime + 0.08);
-    osc1.stop(audioCtx.currentTime + 0.4);
-    osc2.stop(audioCtx.currentTime + 0.4);
+    osc1.stop(audioCtx.currentTime + 0.45);
+    osc2.stop(audioCtx.currentTime + 0.45);
   } catch (e) {
-    console.warn('Audio chime synthesis error:', e);
+    console.warn('Chime synthesis exception', e);
   }
 }
 
 /* ==========================================================================
-   5. AI Voice Assistant & Always-Listening Wake Word
+   7. Cognitive Intelligence & Wake-Word Architecture
    ========================================================================== */
-function speakText(text) {
+function speakResponse(text) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 1.0;
-  utterance.pitch = 1.0;
-  window.speechSynthesis.speak(utterance);
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.rate = 1.05;
+  utter.pitch = 1.0;
+  window.speechSynthesis.speak(utter);
 }
 
 function setWakeState(awake) {
   isAwake = awake;
   if (awake) {
-    aiOrb.classList.add('listening');
-    playWakeChime();
-    assistantResponse.textContent = "Listening...";
-    userSpeechDisplay.textContent = "Go ahead, I'm listening...";
+    voiceIndicator.classList.add('listening');
+    orbTrigger.classList.add('listening');
+    playHarmonicChime();
+    trigger3DShockwave();
+
+    assistantResponse.textContent = "Cognitive link open. Listening...";
+    userSpeech.textContent = "Listening for prompt...";
+
     clearTimeout(wakeTimer);
     wakeTimer = setTimeout(() => {
       setWakeState(false);
-      assistantResponse.textContent = `"Say '${CONFIG.wakeWord}' or tap the orb to ask a question."`;
-      userSpeechDisplay.textContent = "Standby mode.";
-    }, 7000);
+      assistantResponse.textContent = `"Awaiting wake trigger '${CONFIG.wakeWord}' or tactile engagement."`;
+      userSpeech.textContent = "Passive acoustic standby.";
+    }, 8000);
   } else {
-    aiOrb.classList.remove('listening');
+    voiceIndicator.classList.remove('listening');
+    orbTrigger.classList.remove('listening');
     clearTimeout(wakeTimer);
   }
 }
 
-// Local Smart Command Processor
-async function processCommand(cmd) {
-  const cleanCmd = cmd.toLowerCase().trim();
-  userSpeechDisplay.textContent = `You: "${cmd}"`;
+// Local Command Interpreter
+async function executeCognitiveQuery(cmd) {
+  const clean = cmd.toLowerCase().trim();
+  userSpeech.textContent = `Prompt: "${cmd}"`;
 
-  // 1. Music Station Commands
-  if (cleanCmd.includes('play lofi') || cleanCmd.includes('play lo-fi')) {
+  // Local Intent: Music Control
+  if (clean.includes('play lofi') || clean.includes('chillhop')) {
     playStation('lofi');
-    speakText("Playing lofi chillhop.");
+    speakResponse("Streaming Chillhop lo-fi.");
     setWakeState(false);
     return;
   }
-  if (cleanCmd.includes('play jazz')) {
+  if (clean.includes('play jazz') || clean.includes('blue note')) {
     playStation('jazz');
-    speakText("Playing smooth jazz.");
+    speakResponse("Streaming Blue Note jazz.");
     setWakeState(false);
     return;
   }
-  if (cleanCmd.includes('play rain')) {
+  if (clean.includes('play rain') || clean.includes('precipitation')) {
     playStation('rain');
-    speakText("Playing rain ambience.");
+    speakResponse("Streaming precipitation soundscape.");
     setWakeState(false);
     return;
   }
-  if (cleanCmd.includes('play focus') || cleanCmd.includes('play synthwave')) {
+  if (clean.includes('play focus') || clean.includes('synthwave')) {
     playStation('synthwave');
-    speakText("Playing deep focus synthwave.");
+    speakResponse("Streaming deep focus synthwave.");
     setWakeState(false);
     return;
   }
-  if (cleanCmd.includes('stop music') || cleanCmd.includes('pause audio') || cleanCmd === 'stop' || cleanCmd === 'pause') {
+  if (clean.includes('stop music') || clean.includes('pause audio') || clean === 'stop' || clean === 'pause') {
     stopAudio();
-    speakText("Audio stopped.");
+    speakResponse("Audio paused.");
     setWakeState(false);
     return;
   }
 
-  // 2. Open YouTube Music
-  if (cleanCmd.includes('youtube music') || cleanCmd.includes('open youtube')) {
-    speakText("Opening YouTube Music.");
+  // Local Intent: YouTube Music Native Gateway
+  if (clean.includes('youtube music') || clean.includes('open youtube')) {
+    speakResponse("Launching YouTube Music.");
     document.getElementById('ytm-launch-btn').click();
     setWakeState(false);
     return;
   }
 
-  // 3. Time Query
-  if (cleanCmd.includes('what time') || cleanCmd.includes('the time')) {
+  // Local Intent: Time Query
+  if (clean.includes('what time') || clean.includes('the time')) {
     const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    assistantResponse.textContent = `It is currently ${timeStr}.`;
-    speakText(`It is ${timeStr}.`);
+    const t = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    assistantResponse.textContent = `The current time is ${t}.`;
+    speakResponse(`It is ${t}.`);
     setWakeState(false);
     return;
   }
 
-  // 4. Weather Query
-  if (cleanCmd.includes('weather')) {
-    const temp = weatherTemp.textContent;
-    const desc = weatherDesc.textContent;
-    const weatherSpeech = `It is currently ${temp} and ${desc} outside.`;
-    assistantResponse.textContent = weatherSpeech;
-    speakText(weatherSpeech);
+  // Local Intent: Weather Query
+  if (clean.includes('weather') || clean.includes('forecast')) {
+    const t = weatherTemp.textContent;
+    const d = weatherDesc.textContent;
+    const c = weatherCity.textContent;
+    const msg = `Currently ${t} and ${d} in ${c}.`;
+    assistantResponse.textContent = msg;
+    speakResponse(msg);
     setWakeState(false);
     return;
   }
 
-  // 5. General Conversational AI (Gemini or Fallback)
+  // Cloud Gemini 2.0 / 1.5 Flash Conversational Reasoning
   if (CONFIG.geminiKey) {
-    assistantResponse.textContent = "Thinking...";
+    assistantResponse.textContent = "Synthesizing response...";
     try {
-      const response = await queryGemini(cleanCmd, CONFIG.geminiKey);
-      assistantResponse.textContent = response;
-      speakText(response);
+      const reply = await queryGeminiCloud(cmd, CONFIG.geminiKey);
+      assistantResponse.textContent = reply;
+      speakResponse(reply);
     } catch (err) {
       console.error('Gemini error:', err);
-      const fallback = "I encountered an error querying Gemini. Please verify your API key.";
+      const fallback = "Encountered a Gemini API authorization or network issue. Verify your key in Settings.";
       assistantResponse.textContent = fallback;
-      speakText(fallback);
+      speakResponse(fallback);
     }
   } else {
-    // Quick Built-in Responses
-    if (cleanCmd.includes('joke')) {
-      const jokes = [
-        "Why do programmers prefer dark mode? Because light attracts bugs!",
-        "Why was the computer cold? It left its Windows open!",
-        "There are 10 types of people in the world: those who understand binary, and those who don't."
-      ];
-      const joke = jokes[Math.floor(Math.random() * jokes.length)];
-      assistantResponse.textContent = joke;
-      speakText(joke);
+    // Intelligent Offline Persona
+    if (clean.includes('briefing')) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const brief = `Good day. It is ${timeStr}, ${weatherTemp.textContent} with ${weatherDesc.textContent}. Acoustic hub is online.`;
+      assistantResponse.textContent = brief;
+      speakResponse(brief);
     } else {
-      const reply = `I heard: "${cmd}". (Add a Google Gemini API Key in Settings for full conversational answers!)`;
-      assistantResponse.textContent = reply;
-      speakText(`I heard: ${cmd}`);
+      const hint = `Heard: "${cmd}". (Add a Google Gemini API Key in Settings for deep conversational reasoning!)`;
+      assistantResponse.textContent = hint;
+      speakResponse(`Acknowledged: ${cmd}`);
     }
   }
 
   setWakeState(false);
 }
 
-// Google Gemini API Integration
-async function queryGemini(prompt, apiKey) {
+// Google Gemini API Engine
+async function queryGeminiCloud(prompt, apiKey) {
+  // Use Gemini 2.0 Flash or 1.5 Flash
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  
+  conversationHistory.push({
+    role: "user",
+    parts: [{ text: prompt }]
+  });
+
+  // Keep last 6 conversational turns
+  if (conversationHistory.length > 6) {
+    conversationHistory = conversationHistory.slice(-6);
+  }
+
   const payload = {
-    contents: [{
+    systemInstruction: {
       parts: [{
-        text: `You are a concise, helpful voice assistant on a desk display appliance. Answer in 1 or 2 spoken sentences maximum: ${prompt}`
+        text: "You are Jarvis/Aether, the ultra-smart AI on an ambient desk appliance. Answer in 1 or 2 concise, natural spoken sentences. Avoid markdown or bullets, optimize for text-to-speech listening."
       }]
-    }]
+    },
+    contents: conversationHistory
   };
 
   const res = await fetch(url, {
@@ -434,122 +597,152 @@ async function queryGemini(prompt, apiKey) {
 
   const data = await res.json();
   if (data.candidates && data.candidates[0].content.parts[0].text) {
-    return data.candidates[0].content.parts[0].text.trim();
+    const text = data.candidates[0].content.parts[0].text.trim();
+    conversationHistory.push({
+      role: "model",
+      parts: [{ text }]
+    });
+    return text;
   }
   throw new Error('Invalid response structure from Gemini API');
 }
 
-// Continuous Speech Recognition Setup
-function initSpeechRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    wakeStatusText.textContent = "Voice speech API not supported in this browser";
+// Continuous Wake-Word Speech Listener
+function initContinuousListener() {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    wakeStatusText.textContent = "SPEECH API RESTRICTED";
     return;
   }
 
-  recognition = new SpeechRecognition();
+  recognition = new SpeechRec();
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.lang = 'en-US';
 
-  recognition.onresult = (event) => {
-    let interimTranscript = '';
-    let finalTranscript = '';
+  recognition.onresult = (e) => {
+    let interim = '';
+    let final = '';
 
-    for (let i = event.resultIndex; i < event.results.length; ++i) {
-      const transcript = event.results[i][0].transcript.toLowerCase();
-      if (event.results[i].isFinal) {
-        finalTranscript += transcript;
-      } else {
-        interimTranscript += transcript;
-      }
+    for (let i = e.resultIndex; i < e.results.length; ++i) {
+      const transcript = e.results[i][0].transcript.toLowerCase();
+      if (e.results[i].isFinal) final += transcript;
+      else interim += transcript;
     }
 
-    const currentText = (finalTranscript || interimTranscript).trim();
+    const currentText = (final || interim).trim();
 
-    // Check for Wake Word when in standby
     if (!isAwake) {
-      const targetWake = CONFIG.wakeWord.toLowerCase();
-      if (currentText.includes(targetWake) || currentText.includes('hey jarvis') || currentText.includes('jarvis')) {
+      const target = CONFIG.wakeWord.toLowerCase();
+      if (currentText.includes(target) || currentText.includes('hey jarvis') || currentText.includes('jarvis')) {
         setWakeState(true);
-        // If there's an immediate command after the wake word in the same utterance
-        const afterWake = currentText.split(targetWake).pop() || currentText.split('jarvis').pop();
-        if (afterWake && afterWake.trim().length > 3) {
-          processCommand(afterWake.trim());
+        const splitText = currentText.split(target).pop() || currentText.split('jarvis').pop();
+        if (splitText && splitText.trim().length > 3) {
+          executeCognitiveQuery(splitText.trim());
         }
       }
     } else {
-      // In active listening state: display transcription and execute
-      userSpeechDisplay.textContent = `"${currentText}"`;
-      if (finalTranscript && finalTranscript.trim().length > 1) {
-        processCommand(finalTranscript.trim());
+      userSpeech.textContent = `Listening: "${currentText}"`;
+      if (final && final.trim().length > 1) {
+        executeCognitiveQuery(final.trim());
       }
     }
   };
 
-  recognition.onerror = (event) => {
-    console.warn('Speech recognition status:', event.error);
+  recognition.onerror = (e) => {
+    console.warn('Speech status:', e.error);
   };
 
-  // Keep recognition running 24/7 on end
   recognition.onend = () => {
-    try {
-      recognition.start();
-    } catch (e) {
-      // already active
-    }
+    try { recognition.start(); } catch (err) {}
   };
 
-  try {
-    recognition.start();
-  } catch (err) {
-    console.warn('Recognition start exception:', err);
-  }
+  try { recognition.start(); } catch (err) {}
 }
 
-// Initialize speech listener
-initSpeechRecognition();
+initContinuousListener();
 
-// Orb Touch Trigger (Manual 1-tap activation)
+// Orb Click Listener
 orbTrigger.addEventListener('click', () => {
   setWakeState(true);
 });
 
-// Quick Prompt Chips
-document.querySelectorAll('.prompt-chip').forEach(chip => {
+// Kinetic Action Chips
+document.querySelectorAll('.k-chip, .k-cmd-chip').forEach(chip => {
   chip.addEventListener('click', () => {
-    processCommand(chip.dataset.cmd);
+    executeCognitiveQuery(chip.dataset.cmd);
   });
 });
 
 /* ==========================================================================
-   6. Settings Modal Management
+   8. Settings & API Key Drawer Management
    ========================================================================== */
+function updateSettingsStatus() {
+  if (CONFIG.geminiKey) {
+    geminiStatus.textContent = "Connected";
+    geminiStatus.classList.add('active');
+  } else {
+    geminiStatus.textContent = "Unset";
+    geminiStatus.classList.remove('active');
+  }
+}
+
 btnSettings.addEventListener('click', () => {
-  cfgWakewordInput.value = CONFIG.wakeWord;
-  cfgGeminiInput.value = CONFIG.geminiKey;
-  cfgCityInput.value = CONFIG.customCity;
-  cfg24hInput.checked = CONFIG.use24h;
+  cfgWakeword.value = CONFIG.wakeWord;
+  cfgGeminiKey.value = CONFIG.geminiKey;
+  cfgCity.value = CONFIG.customCity;
+  cfg24h.checked = CONFIG.use24h;
+  updateSettingsStatus();
+
   settingsModal.classList.add('open');
+  gsap.from('.modal-pane', {
+    y: 30,
+    opacity: 0,
+    scale: 0.95,
+    duration: 0.35,
+    ease: 'power3.out'
+  });
 });
 
 modalClose.addEventListener('click', () => {
   settingsModal.classList.remove('open');
 });
 
+document.querySelector('.modal-backdrop').addEventListener('click', () => {
+  settingsModal.classList.remove('open');
+});
+
+btnTestGemini.addEventListener('click', async () => {
+  const testKey = cfgGeminiKey.value.trim();
+  if (!testKey) {
+    alert("Please enter a Gemini API Key first.");
+    return;
+  }
+  btnTestGemini.textContent = "VERIFYING...";
+  try {
+    const res = await queryGeminiCloud("Hello", testKey);
+    btnTestGemini.textContent = "VERIFIED ✓";
+    geminiStatus.textContent = "Active";
+    geminiStatus.classList.add('active');
+  } catch (err) {
+    btnTestGemini.textContent = "INVALID ✗";
+    alert("API Key verification failed: " + err.message);
+  }
+});
+
 btnSaveSettings.addEventListener('click', () => {
-  CONFIG.wakeWord = cfgWakewordInput.value.trim() || 'Hey Jarvis';
-  CONFIG.geminiKey = cfgGeminiInput.value.trim();
-  CONFIG.customCity = cfgCityInput.value.trim();
-  CONFIG.use24h = cfg24hInput.checked;
+  CONFIG.wakeWord = cfgWakeword.value.trim() || 'Hey Jarvis';
+  CONFIG.geminiKey = cfgGeminiKey.value.trim();
+  CONFIG.customCity = cfgCity.value.trim();
+  CONFIG.use24h = cfg24h.checked;
 
-  localStorage.setItem('hub_wakeword', CONFIG.wakeWord);
-  localStorage.setItem('hub_gemini_key', CONFIG.geminiKey);
-  localStorage.setItem('hub_city', CONFIG.customCity);
-  localStorage.setItem('hub_24h', CONFIG.use24h);
+  localStorage.setItem('aether_wakeword', CONFIG.wakeWord);
+  localStorage.setItem('aether_gemini_key', CONFIG.geminiKey);
+  localStorage.setItem('aether_city', CONFIG.customCity);
+  localStorage.setItem('aether_24h', CONFIG.use24h);
 
-  wakeStatusText.innerHTML = `Listening for "<span class="wake-word-highlight">${CONFIG.wakeWord}</span>"`;
+  wakeStatusText.innerHTML = `LISTENING FOR <span class="highlight">"${CONFIG.wakeWord.toUpperCase()}"</span>`;
   settingsModal.classList.remove('open');
   updateClock();
-  fetchWeather();
+  fetchAtmosphere();
 });
