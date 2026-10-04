@@ -198,28 +198,28 @@ initThreeScene();
    2. GSAP Entrance Timeline & Micro-Interactions
    ========================================================================== */
 function runEntranceAnimations() {
+  if (typeof gsap === 'undefined') return;
   const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
 
   tl.from('.top-nav', {
-    y: -30,
+    y: -20,
     opacity: 0,
-    duration: 0.9
+    duration: 0.7
   })
   .from('.bento-card', {
-    y: 40,
+    y: 30,
     opacity: 0,
-    scale: 0.96,
-    duration: 1.0,
-    stagger: 0.12
-  }, '-=0.5')
-  .from('.display-time-wrap', {
-    scale: 0.9,
-    opacity: 0,
-    duration: 0.8
-  }, '-=0.6');
+    scale: 0.98,
+    duration: 0.8,
+    stagger: 0.1
+  }, '-=0.3');
 }
 
-window.addEventListener('DOMContentLoaded', runEntranceAnimations);
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', runEntranceAnimations);
+} else {
+  runEntranceAnimations();
+}
 
 /* ==========================================================================
    3. Chrono Engine
