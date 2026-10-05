@@ -23,6 +23,21 @@
   --radius-lg: 18px;
   --radius-md: 12px;
 }
+/* Light Mode Overrides */
+:root[data-theme="light"] {
+  --bg-deep: #e2e8f0;
+  --card-bg: rgba(255, 255, 255, 0.65);
+  --card-border: rgba(0, 0, 0, 0.1);
+  --card-hover: rgba(255, 255, 255, 0.9);
+  --card-specular: inset 0 1px 1px rgba(255, 255, 255, 0.5);
+  
+  --txt-primary: #0f172a;
+  --txt-muted: #475569;
+  --txt-dim: #94a3b8;
+  
+  --accent-cyan: #0ea5e9;
+}
+
 
 * {
   box-sizing: border-box;

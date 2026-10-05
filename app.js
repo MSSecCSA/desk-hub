@@ -38,7 +38,8 @@ const CONFIG = {
   pvKey: localStorage.getItem('aether_pv_key') || '',
   customCity: localStorage.getItem('aether_city') || '',
   use24h: localStorage.getItem('aether_24h') === 'true',
-  volume: parseFloat(localStorage.getItem('aether_volume') || '0.8')
+  volume: parseFloat(localStorage.getItem('aether_volume') || '0.8'),
+  theme: localStorage.getItem('aether_theme') || 'dark'
 };
 
 // Global State
@@ -52,6 +53,10 @@ let isAwake = false;
 let recognition = null;
 let wakeTimer = null;
 let conversationHistory = [];
+
+if (CONFIG.theme === 'light') {
+  document.documentElement.setAttribute('data-theme', 'light');
+}
 
 // Audio Streams
 const STATIONS = {
@@ -91,6 +96,7 @@ const userSpeech = document.getElementById('user-speech');
 const orbTrigger = document.getElementById('orb-trigger');
 
 const btnSettings = document.getElementById('btn-settings');
+const btnThemeToggle = document.getElementById('btn-theme-toggle');
 const settingsModal = document.getElementById('settings-modal');
 const modalClose = document.getElementById('modal-close');
 const btnSaveSettings = document.getElementById('btn-save-settings');
@@ -944,6 +950,19 @@ btnSettings.addEventListener('click', () => {
     ease: 'power3.out'
   });
 });
+
+if (btnThemeToggle) {
+  btnThemeToggle.addEventListener('click', () => {
+    if (CONFIG.theme === 'dark') {
+      CONFIG.theme = 'light';
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+      CONFIG.theme = 'dark';
+      document.documentElement.removeAttribute('data-theme');
+    }
+    localStorage.setItem('aether_theme', CONFIG.theme);
+  });
+}
 
 modalClose.addEventListener('click', () => {
   settingsModal.classList.remove('open');
