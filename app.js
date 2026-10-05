@@ -60,10 +60,10 @@ if (CONFIG.theme === 'light') {
 
 // Audio Streams
 const STATIONS = {
-  lofi: { name: 'SomaFM Groove Salad', url: 'https://ice6.somafm.com/groovesalad-256-mp3' },
-  jazz: { name: 'SomaFM Secret Agent', url: 'https://ice4.somafm.com/secretagent-256-mp3' },
-  rain: { name: 'SomaFM Drone Zone', url: 'https://ice4.somafm.com/dronezone-256-mp3' },
-  synthwave: { name: 'SomaFM Def Con Radio', url: 'https://ice6.somafm.com/defcon-256-mp3' }
+  lofi: { name: 'Lofi Girl (Live 24/7)', url: 'https://play.streamafrica.net/lofi' },
+  jazz: { name: 'Relaxing Jazz', url: 'https://stream.zeno.fm/f3wvbbqmdg8uv' },
+  rain: { name: 'Rain & Thunder (Sleep)', url: 'https://stream.zeno.fm/f31h2z3r7mruv' },
+  synthwave: { name: 'Nightrider Synthwave', url: 'https://stream.zeno.fm/0r0xa792kwzuv' }
 };
 
 document.querySelectorAll('.ytm-gateway').forEach(btn => {
@@ -535,7 +535,7 @@ function connectGeminiLive() {
     // Setup Payload
     const setupMessage = {
       setup: {
-        model: "models/gemini-2.5-flash",
+        model: "models/gemini-2.0-flash-exp",
         generationConfig: {
           responseModalities: ["AUDIO"],
         },
