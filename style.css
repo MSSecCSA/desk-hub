@@ -45,6 +45,7 @@
   padding: 0;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  touch-action: pan-x pan-y; /* Prevent browser from swallowing touch events */
 }
 
 html, body {
@@ -55,6 +56,7 @@ html, body {
   width: 100%;
   overflow: hidden;
   position: relative;
+  overscroll-behavior: none; /* Disable Android Pull-to-Refresh */
 }
 
 /* 3D WebGL Canvas Layer */
