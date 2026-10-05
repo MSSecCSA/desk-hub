@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "gcloud": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@google-cloud/gcloud-mcp"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {
+        "CONTEXT7_API_KEY": "ctx7sk-d9d427e1-137e-47c2-80cf-86ceb9008cfe"
+      }
+    },
+    "android": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@metamask/device-mcp"
+      ]
+    }
+  }
+}

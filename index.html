@@ -18,6 +18,9 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   
+  <!-- Picovoice Porcupine (Wake Word) & WebVoiceProcessor -->
+  <script src="https://unpkg.com/@picovoice/porcupine-web/dist/iife/index.js"></script>
+  <script src="https://unpkg.com/@picovoice/web-voice-processor/dist/iife/index.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -274,7 +277,7 @@
             
             <div style="margin-top: 40px; display: flex; gap: 16px;">
               <button id="btn-auth-mic" class="btn-hero" style="background: var(--accent-fuchsia); padding: 16px 32px; font-size: 1.1rem; border-radius: 30px; border: none; color: #fff; cursor: pointer; font-family: var(--font-hero); font-weight: 800;">AUTHORIZE ALWAYS-ON MICROPHONE</button>
-              <button id="btn-trigger-ai" class="btn-hero" style="background: var(--accent-cyan); padding: 16px 32px; font-size: 1.1rem; border-radius: 30px; border: none; color: #040810; cursor: pointer; display: none; font-family: var(--font-hero); font-weight: 800;">PUSH TO TALK (MULTIMODAL)</button>
+              <button id="btn-trigger-ai" class="btn-hero" style="background: var(--accent-cyan); padding: 16px 32px; font-size: 1.1rem; border-radius: 30px; border: none; color: #040810; cursor: pointer; display: none; font-family: var(--font-hero); font-weight: 800;">WAKE ASSISTANT (MANUAL)</button>
             </div>
           </section>
         </main>

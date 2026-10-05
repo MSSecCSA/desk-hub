@@ -11,6 +11,10 @@ try {
       shouldCleanUrl = true;
     }
   }
+  if (urlParams.has('pv_key')) {
+    localStorage.setItem('aether_pv_key', urlParams.get('pv_key'));
+    shouldCleanUrl = true;
+  }
   if (urlParams.has('city')) {
     localStorage.setItem('aether_city', urlParams.get('city'));
     shouldCleanUrl = true;
@@ -31,6 +35,7 @@ try {
 const CONFIG = {
   wakeWord: localStorage.getItem('aether_wakeword') || 'hey jarvis',
   geminiKey: localStorage.getItem('aether_gemini_key') || '',
+  pvKey: localStorage.getItem('aether_pv_key') || '',
   customCity: localStorage.getItem('aether_city') || '',
   use24h: localStorage.getItem('aether_24h') === 'true',
   volume: parseFloat(localStorage.getItem('aether_volume') || '0.8')
@@ -454,6 +459,283 @@ function playHarmonicChime() {
 }
 
 /* ==========================================================================
+   6.5. Real-Time Audio Subsystem (16kHz 16-bit PCM Pipeline)
+   ========================================================================== */
+// Android/Kiosk restricts importing external JS worklet files due to CORS/Paths.
+// We inject the AudioWorklet string as a Blob natively.
+const audioWorkletCode = `
+class PCMProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.sampleRate = 16000;
+  }
+
+  process(inputs, outputs, parameters) {
+    const input = inputs[0];
+    if (input && input.length > 0) {
+      const channelData = input[0];
+      
+      // Naive downsampling (browser usually provides 44.1kHz or 48kHz)
+      // Since we can't easily rely on the exact native sampleRate in the worklet without passing it,
+      // we pass it in the constructor or assume AudioContext handles resample on node creation.
+      // But for exact safety, we convert Float32 [-1.0, 1.0] to Int16
+      const pcm16 = new Int16Array(channelData.length);
+      for (let i = 0; i < channelData.length; i++) {
+        let s = Math.max(-1, Math.min(1, channelData[i]));
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      
+      this.port.postMessage(pcm16.buffer, [pcm16.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-processor', PCMProcessor);
+`;
+
+let liveAudioContext = null;
+let liveMicStream = null;
+let pcmWorkletNode = null;
+
+async function initMicPipeline() {
+  if (liveAudioContext) return;
+  
+/* ==========================================================================
+   6.7. Gemini Multimodal Live API (WebSocket)
+   ========================================================================== */
+let geminiSocket = null;
+let isGeminiSpeaking = false;
+
+function connectGeminiLive() {
+  if (!CONFIG.geminiKey) {
+    console.warn("No Gemini Key, Live API disabled.");
+    return;
+  }
+  
+  const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${CONFIG.geminiKey}`;
+  
+  geminiSocket = new WebSocket(WS_URL);
+  
+  geminiSocket.onopen = () => {
+    console.log("Gemini Live WebSocket Connected");
+    // Setup Payload
+    const setupMessage = {
+      setup: {
+        model: "models/gemini-2.5-flash",
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+        },
+        systemInstruction: {
+          parts: [{
+            text: "You are Jarvis/Aether, the ultra-smart AI on an ambient desk appliance. Be extremely concise. Talk fast."
+          }]
+        }
+      }
+    };
+    geminiSocket.send(JSON.stringify(setupMessage));
+  };
+  
+  geminiSocket.onmessage = async (event) => {
+    // If response is Blob, we need to read it
+    let dataStr;
+    if (event.data instanceof Blob) {
+      dataStr = await event.data.text();
+    } else {
+      dataStr = event.data;
+    }
+    
+    try {
+      const response = JSON.parse(dataStr);
+      
+      if (response.serverContent && response.serverContent.modelTurn) {
+        const parts = response.serverContent.modelTurn.parts;
+        if (parts) {
+          for (let p of parts) {
+            if (p.inlineData && p.inlineData.mimeType.startsWith("audio/pcm")) {
+              playGeminiAudio(p.inlineData.data);
+            }
+          }
+        }
+      }
+      if (response.serverContent && response.serverContent.turnComplete) {
+        isGeminiSpeaking = false;
+        setWakeState(false);
+      }
+    } catch(err) {
+      console.warn("WebSocket parse error", err);
+    }
+  };
+  
+  geminiSocket.onclose = () => {
+    console.log("Gemini Live WebSocket Closed");
+    geminiSocket = null;
+  };
+  
+  geminiSocket.onerror = (err) => {
+    console.error("Gemini Live WebSocket Error", err);
+  };
+}
+
+let playbackQueue = [];
+let isPlayingPcm = false;
+let currentPlaybackSource = null;
+
+// Quick base64 to Float32 AudioBuffer and schedule
+function playGeminiAudio(base64Str) {
+  isGeminiSpeaking = true;
+  const binaryStr = atob(base64Str);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  
+  // Gemini returns 24000 Hz 16-bit PCM Mono
+  const int16 = new Int16Array(bytes.buffer);
+  const audioBuffer = liveAudioContext.createBuffer(1, int16.length, 24000);
+  const channelData = audioBuffer.getChannelData(0);
+  
+  for(let i=0; i<int16.length; i++) {
+    channelData[i] = int16[i] / 32768.0;
+  }
+  
+  playbackQueue.push(audioBuffer);
+  if(!isPlayingPcm) processPlaybackQueue();
+}
+
+async function processPlaybackQueue() {
+  if(playbackQueue.length === 0) {
+    isPlayingPcm = false;
+    currentPlaybackSource = null;
+    return;
+  }
+  
+  isPlayingPcm = true;
+  const buffer = playbackQueue.shift();
+  currentPlaybackSource = liveAudioContext.createBufferSource();
+  currentPlaybackSource.buffer = buffer;
+  currentPlaybackSource.connect(liveAudioContext.destination);
+  
+  currentPlaybackSource.onended = () => {
+    processPlaybackQueue();
+  };
+  
+  currentPlaybackSource.start();
+}
+
+  try {
+    liveMicStream = await navigator.mediaDevices.getUserMedia({ 
+      audio: { 
+        echoCancellation: true, 
+        noiseSuppression: true, 
+        autoGainControl: true 
+      } 
+    });
+    
+    // Gemini API requires 16000 Hz. We set the AudioContext natively to 16kHz so the browser handles resampling!
+    liveAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    
+    const blob = new Blob([audioWorkletCode], { type: 'application/javascript' });
+    const workletUrl = URL.createObjectURL(blob);
+    
+    await liveAudioContext.audioWorklet.addModule(workletUrl);
+    
+    const source = liveAudioContext.createMediaStreamSource(liveMicStream);
+    pcmWorkletNode = new AudioWorkletNode(liveAudioContext, 'pcm-processor');
+    
+    pcmWorkletNode.port.onmessage = (e) => {
+      const pcmBuffer = e.data; 
+      // Pass to Wake Word / Gemini WebSockets here later...
+      handlePcmData(pcmBuffer);
+    };
+    
+    source.connect(pcmWorkletNode);
+    pcmWorkletNode.connect(liveAudioContext.destination); // Required to keep worklet alive in some browsers
+    
+    console.log("16kHz PCM audio pipeline active.");
+  } catch (err) {
+    console.error("Mic initialization failed", err);
+  }
+}
+
+function handlePcmData(pcmBuffer) {
+  if (isListeningForWake && porcupineWorker) {
+    // Porcupine expects Int16Array
+    porcupineWorker.postMessage({ command: "process", inputFrame: new Int16Array(pcmBuffer) });
+  } else if (isAwake && geminiSocket && geminiSocket.readyState === WebSocket.OPEN && !isGeminiSpeaking) {
+    // Gemini expects base64 PCM via JSON
+    const b64 = arrayBufferToBase64(pcmBuffer);
+    geminiSocket.send(JSON.stringify({
+      realtimeInput: {
+        mediaChunks: [{
+          mimeType: "audio/pcm;rate=16000",
+          data: b64
+        }]
+      }
+    }));
+  }
+}
+
+
+let porcupineWorker = null;
+let isListeningForWake = false;
+
+async function initPorcupine() {
+  if (!CONFIG.pvKey || typeof PorcupineWeb === 'undefined') return;
+  
+  try {
+    // Using the built-in wake word 'Porcupine'. (Custom wake words require a custom base64 model from Picovoice console)
+    porcupineWorker = await PorcupineWeb.PorcupineWorker.create(
+      CONFIG.pvKey,
+      PorcupineWeb.BuiltInKeyword.Porcupine,
+      porcupineKeywordCallback,
+      { processErrorCallback: (err) => console.error("Porcupine error:", err) }
+    );
+    
+    isListeningForWake = true;
+    console.log("Porcupine Wake Word initialized. Waiting for 'Porcupine'...");
+  } catch(err) {
+    console.error("Failed to init Porcupine:", err);
+  }
+}
+
+function porcupineKeywordCallback(keyword) {
+  console.log(`Wake word detected: ${keyword}`);
+  isListeningForWake = false; // Stop listening to mic locally
+  
+  // If we are currently playing audio from a previous turn, halt it
+  if (currentPlaybackSource) {
+    currentPlaybackSource.stop();
+    playbackQueue = [];
+    isPlayingPcm = false;
+  }
+  
+  // If Gemini socket is active, send interruption
+  if (geminiSocket && geminiSocket.readyState === WebSocket.OPEN) {
+    geminiSocket.send(JSON.stringify({
+      clientContent: {
+        turns: [{ role: "user", parts: [] }],
+        turnComplete: true
+      }
+    }));
+  } else {
+    connectGeminiLive();
+  }
+  
+  setWakeState(true);
+  assistantResponse.textContent = "Listening via Live API...";
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  let bytes = new Uint8Array(buffer);
+  let len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+/* ==========================================================================
    7. Cognitive Intelligence & Wake-Word Architecture
    ========================================================================== */
 async function speakResponse(text) {
@@ -614,144 +896,6 @@ async function executeCognitiveQuery(cmd) {
 
   setWakeState(false);
 }
-
-// Google Gemini API Engine
-async function queryGeminiCloud(prompt, apiKey) {
-  conversationHistory.push({
-    role: "user",
-    parts: [{ text: prompt }]
-  });
-
-  // Keep last 6 conversational turns
-  if (conversationHistory.length > 6) {
-    conversationHistory = conversationHistory.slice(-6);
-  }
-
-  const payload = {
-    systemInstruction: {
-      parts: [{
-        text: "You are Jarvis/Aether, the ultra-smart AI on an ambient desk appliance. Answer in 1 or 2 concise, natural spoken sentences. Avoid markdown or bullets, optimize for text-to-speech listening."
-      }]
-    },
-    contents: conversationHistory
-  };
-
-  const models = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash-lite'];
-  let lastErr = null;
-  for (const model of models) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (data.error) {
-        throw new Error(data.error.message || `API error ${data.error.code}`);
-      }
-      if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
-        const text = data.candidates[0].content.parts[0].text.trim();
-        conversationHistory.push({
-          role: "model",
-          parts: [{ text }]
-        });
-        return text;
-      }
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  throw lastErr || new Error('Invalid response structure from Gemini API');
-}
-
-// Google Gemini Multimodal Audio Engine (Speech-to-Speech)
-async function queryGeminiCloudAudio(base64Audio, mimeType, apiKey) {
-  const payload = {
-    systemInstruction: {
-      parts: [{
-        text: "You are Aether. You are receiving raw audio input from the user. Transcribe their intent and respond back naturally in 1-2 concise sentences."
-      }]
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { inlineData: { mimeType: mimeType, data: base64Audio } }
-        ]
-      }
-    ]
-  };
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message || `API error ${data.error.code}`);
-  if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
-    return data.candidates[0].content.parts[0].text.trim();
-  }
-  throw new Error('Invalid response structure from Gemini Audio API');
-}
-
-// Continuous Wake-Word Speech Listener
-function initContinuousListener() {
-  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec) {
-    wakeStatusText.textContent = "SPEECH API RESTRICTED";
-    return;
-  }
-
-  recognition = new SpeechRec();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
-
-  recognition.onresult = (e) => {
-    let interim = '';
-    let final = '';
-
-    for (let i = e.resultIndex; i < e.results.length; ++i) {
-      const transcript = e.results[i][0].transcript.toLowerCase();
-      if (e.results[i].isFinal) final += transcript;
-      else interim += transcript;
-    }
-
-    const currentText = (final || interim).trim();
-
-    if (!isAwake) {
-      const target = CONFIG.wakeWord.toLowerCase();
-      if (currentText.includes(target) || currentText.includes('hey jarvis') || currentText.includes('jarvis')) {
-        setWakeState(true);
-        const splitText = currentText.split(target).pop() || currentText.split('jarvis').pop();
-        if (splitText && splitText.trim().length > 3) {
-          executeCognitiveQuery(splitText.trim());
-        }
-      }
-    } else {
-      userSpeech.textContent = `Listening: "${currentText}"`;
-      if (final && final.trim().length > 1) {
-        executeCognitiveQuery(final.trim());
-      }
-    }
-  };
-
-  recognition.onerror = (e) => {
-    console.warn('Speech status:', e.error);
-  };
-
-  recognition.onend = () => {
-    try { recognition.start(); } catch (err) {}
-  };
-
-  try { recognition.start(); } catch (err) {}
-}
-
-initContinuousListener();
 
 // Orb Click Listener
 orbTrigger.addEventListener('click', () => {
@@ -971,80 +1115,40 @@ if (btnAuthMic) {
   btnAuthMic.addEventListener('click', async () => {
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
+        await initMicPipeline();
+        await initPorcupine();
         
-        document.getElementById('full-assistant-response').textContent = "Microphone Authorized. Cognitive Link Established.";
-        document.getElementById('full-user-speech').textContent = "Always-listening subsystem is now active in background.";
+        document.getElementById('full-assistant-response').textContent = "Microphone Authorized. Real-Time PCM Link Established.";
+        document.getElementById('full-user-speech').textContent = "Sub-system is now streaming 16kHz PCM audio for Live AI.";
         
         btnAuthMic.style.display = 'none';
         btnTriggerAi.style.display = 'block';
         fullOrbTrigger.style.pointerEvents = 'auto';
-        
-        try { recognition.start(); } catch(e) {} // kickstart continuous listening
       }
     } catch (err) {
       document.getElementById('full-assistant-response').textContent = "Authorization Failed.";
       document.getElementById('full-user-speech').textContent = "Check OS-level app permissions for microphone.";
+      console.error(err);
     }
   });
 
-  let assistantMediaRecorder;
-  let assistantAudioChunks = [];
-
-  function startPtt(e) {
+  
+  // New manual wake button hooks right into our new wake function
+  function triggerManualWake(e) {
     e.preventDefault();
     if (!CONFIG.geminiKey) {
       alert("Please set Gemini API Key in Settings first.");
       return;
     }
-    btnTriggerAi.textContent = "LISTENING... (RELEASE TO SEND)";
-    btnTriggerAi.style.background = "var(--accent-fuchsia)";
-    fullOrbTrigger.classList.add('listening');
-    document.getElementById('full-user-speech').textContent = "Capturing high-fidelity audio...";
     
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      assistantMediaRecorder = new MediaRecorder(stream);
-      assistantMediaRecorder.ondataavailable = ev => { if(ev.data.size > 0) assistantAudioChunks.push(ev.data); };
-      assistantMediaRecorder.onstop = () => {
-        const blob = new Blob(assistantAudioChunks, { type: assistantMediaRecorder.mimeType });
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const b64 = reader.result.split(',')[1];
-          document.getElementById('full-user-speech').textContent = "Audio captured. Routing to Gemini Multimodal Model...";
-          try {
-            const reply = await queryGeminiCloudAudio(b64, assistantMediaRecorder.mimeType, CONFIG.geminiKey);
-            document.getElementById('full-assistant-response').textContent = reply;
-            speakResponse(reply);
-          } catch(err) {
-            document.getElementById('full-assistant-response').textContent = "Audio processing failed. Try again.";
-            console.error(err);
-          }
-        };
-        reader.readAsDataURL(blob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-      assistantAudioChunks = [];
-      assistantMediaRecorder.start();
-    }).catch(err => console.warn("Mic error", err));
-  }
-
-  function stopPtt(e) {
-    e.preventDefault();
-    btnTriggerAi.textContent = "PUSH TO TALK (MULTIMODAL)";
-    btnTriggerAi.style.background = "var(--accent-cyan)";
-    fullOrbTrigger.classList.remove('listening');
-    if (assistantMediaRecorder && assistantMediaRecorder.state === 'recording') {
-      assistantMediaRecorder.stop();
+    // If we're not currently awake, simulate a wake word hit
+    if (!isAwake) {
+      porcupineKeywordCallback("Manual Trigger");
     }
   }
-
-  btnTriggerAi.addEventListener('mousedown', startPtt);
-  btnTriggerAi.addEventListener('touchstart', startPtt, { passive: false });
   
-  btnTriggerAi.addEventListener('mouseup', stopPtt);
-  btnTriggerAi.addEventListener('touchend', stopPtt, { passive: false });
+  btnTriggerAi.addEventListener('click', triggerManualWake);
   
   // Also keep the simple orb click for the regular text-based wake
-  fullOrbTrigger.addEventListener('click', () => { setWakeState(true); });
+  fullOrbTrigger.addEventListener('click', triggerManualWake);
 }
