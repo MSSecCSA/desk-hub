@@ -66,6 +66,14 @@ const STATIONS = {
   synthwave: { name: 'SomaFM Def Con Radio', url: 'https://ice6.somafm.com/defcon-256-mp3' }
 };
 
+document.querySelectorAll('.ytm-gateway').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    // Let the native href=intent:// trigger the Android OS intent resolver
+    // But play a chime as feedback
+    playHarmonicChime();
+  });
+});
+
 // DOM References
 const timeDisplay = document.getElementById('time-display');
 const amPmDisplay = document.getElementById('am-pm');
