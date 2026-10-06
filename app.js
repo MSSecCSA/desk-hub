@@ -270,6 +270,37 @@ if (document.readyState === 'loading') {
 }
 
 /* ==========================================================================
+   2.5. Screen Wake Lock Engine (24/7 Appliance Display Persistence)
+   ========================================================================== */
+let screenWakeLock = null;
+
+async function requestScreenWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      if (!screenWakeLock) {
+        screenWakeLock = await navigator.wakeLock.request('screen');
+        screenWakeLock.addEventListener('release', () => {
+          screenWakeLock = null;
+        });
+        console.log('Screen Wake Lock active.');
+      }
+    } catch (err) {
+      console.warn('Wake Lock request exception:', err);
+    }
+  }
+}
+
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible') {
+    await requestScreenWakeLock();
+  }
+});
+
+window.addEventListener('load', requestScreenWakeLock);
+document.addEventListener('click', requestScreenWakeLock, { once: true });
+document.addEventListener('touchstart', requestScreenWakeLock, { once: true });
+
+/* ==========================================================================
    3. Chrono Engine
    ========================================================================== */
 function updateClock() {

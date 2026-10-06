@@ -1,0 +1,19 @@
+{
+  "name": "AETHER // Intelligent Desk Appliance",
+  "short_name": "AETHER",
+  "description": "Multi-screen kinetic dashboard & cognitive assistant",
+  "start_url": "/desk-hub/",
+  "scope": "/desk-hub/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#06080d",
+  "theme_color": "#06080d",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
