@@ -19,7 +19,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   
   <!-- Picovoice Porcupine (Wake Word) & WebVoiceProcessor -->
-  <script src="https://unpkg.com/@picovoice/porcupine-web/dist/iife/index.js"></script>
+  <script src="https://unpkg.com/@picovoice/porcupine-web@4.0.1/dist/iife/index.js"></script>
   <script src="https://unpkg.com/@picovoice/web-voice-processor/dist/iife/index.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -34,7 +34,7 @@
       <div class="nav-brand">
         <span class="live-pulse"></span>
         <span class="brand-text">AETHER</span>
-        <span class="brand-sub">// OS 2.5.1</span>
+        <span class="brand-sub">// OS 2.5.2</span>
       </div>
 
       <div class="voice-pill" id="voice-indicator">
@@ -321,6 +321,16 @@
               <button class="btn-subtle" id="btn-test-gemini">VERIFY</button>
             </div>
             <p class="unit-caption">Enables full conversational intelligence, multi-turn reasoning, and spoken voice answers via Gemini 2.0 / 1.5 Flash.</p>
+          </div>
+
+          <!-- Picovoice Key -->
+          <div class="field-unit">
+            <div class="unit-label-row">
+              <label for="cfg-pv-key">PICOVOICE ACCESSKEY</label>
+              <span class="tag-status" id="pv-status">Unset</span>
+            </div>
+            <input type="password" id="cfg-pv-key" placeholder="Picovoice AccessKey from console.picovoice.ai...">
+            <p class="unit-caption">Enables zero-latency offline wake word detection for "Jarvis" via WebAssembly.</p>
           </div>
 
           <!-- Wake Word -->

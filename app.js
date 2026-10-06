@@ -60,10 +60,10 @@ if (CONFIG.theme === 'light') {
 
 // Audio Streams
 const STATIONS = {
-  lofi: { name: 'Lofi Girl (Live 24/7)', url: 'https://play.streamafrica.net/lofi' },
+  lofi: { name: 'Lofi Girl (Live 24/7)', url: 'https://play.streamafrica.net/lofiradio' },
   jazz: { name: 'Relaxing Jazz', url: 'https://stream.zeno.fm/f3wvbbqmdg8uv' },
-  rain: { name: 'Rain & Thunder (Sleep)', url: 'https://stream.zeno.fm/f31h2z3r7mruv' },
-  synthwave: { name: 'Nightrider Synthwave', url: 'https://stream.zeno.fm/0r0xa792kwzuv' }
+  rain: { name: 'Rain & Thunder (Sleep)', url: 'https://maggie.torontocast.com:2020/stream/natureradiorain' },
+  synthwave: { name: 'Nightrider Synthwave', url: 'https://stream.nightride.fm/nightride.mp3' }
 };
 
 document.querySelectorAll('.ytm-gateway').forEach(btn => {
@@ -114,6 +114,8 @@ const cfgCity = document.getElementById('cfg-city');
 const cfg24h = document.getElementById('cfg-24h');
 const geminiStatus = document.getElementById('gemini-status');
 const btnTestGemini = document.getElementById('btn-test-gemini');
+const cfgPvKey = document.getElementById('cfg-pv-key');
+const pvStatus = document.getElementById('pv-status');
 
 /* ==========================================================================
    1. Three.js 3D Kinetic Background Engine
@@ -415,6 +417,18 @@ function stopAudio() {
   nowPlayingTitle.textContent = 'Acoustic playback paused';
 }
 
+audioPlayer.addEventListener('error', (e) => {
+  console.warn('Audio stream error occurred:', e);
+  if (currentStation && isPlaying) {
+    nowPlayingTitle.textContent = 'Stream interrupted. Reconnecting...';
+    setTimeout(() => {
+      if (isPlaying && currentStation) {
+        playStation(currentStation);
+      }
+    }, 3000);
+  }
+});
+
 matrixTiles.forEach(tile => {
   tile.addEventListener('click', () => {
     const key = tile.dataset.station;
@@ -510,15 +524,59 @@ registerProcessor('pcm-processor', PCMProcessor);
 let liveAudioContext = null;
 let liveMicStream = null;
 let pcmWorkletNode = null;
+let micPipelineReady = false;
 
 async function initMicPipeline() {
-  if (liveAudioContext) return;
-  
+  if (micPipelineReady) return;
+  try {
+    liveMicStream = await navigator.mediaDevices.getUserMedia({ 
+      audio: { 
+        echoCancellation: true, 
+        noiseSuppression: true, 
+        autoGainControl: true 
+      } 
+    });
+    
+    // Gemini API requires 16000 Hz. We set the AudioContext natively to 16kHz so the browser handles resampling!
+    if (!liveAudioContext) {
+      liveAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    }
+    if (liveAudioContext.state === 'suspended') {
+      await liveAudioContext.resume();
+    }
+    
+    const blob = new Blob([audioWorkletCode], { type: 'application/javascript' });
+    const workletUrl = URL.createObjectURL(blob);
+    
+    await liveAudioContext.audioWorklet.addModule(workletUrl);
+    
+    const source = liveAudioContext.createMediaStreamSource(liveMicStream);
+    pcmWorkletNode = new AudioWorkletNode(liveAudioContext, 'pcm-processor');
+    
+    pcmWorkletNode.port.onmessage = (e) => {
+      const pcmBuffer = e.data; 
+      handlePcmData(pcmBuffer);
+    };
+    
+    source.connect(pcmWorkletNode);
+    pcmWorkletNode.connect(liveAudioContext.destination); // Required to keep worklet alive in some browsers
+    
+    micPipelineReady = true;
+    console.log("16kHz PCM audio pipeline active.");
+  } catch (err) {
+    console.error("Mic initialization failed", err);
+  }
+}
+
+
 /* ==========================================================================
    6.7. Gemini Multimodal Live API (WebSocket)
    ========================================================================== */
 let geminiSocket = null;
 let isGeminiSpeaking = false;
+let playbackQueue = [];
+let isPlayingPcm = false;
+let currentPlaybackSource = null;
 
 function connectGeminiLive() {
   if (!CONFIG.geminiKey) {
@@ -550,7 +608,6 @@ function connectGeminiLive() {
   };
   
   geminiSocket.onmessage = async (event) => {
-    // If response is Blob, we need to read it
     let dataStr;
     if (event.data instanceof Blob) {
       dataStr = await event.data.text();
@@ -574,6 +631,9 @@ function connectGeminiLive() {
       if (response.serverContent && response.serverContent.turnComplete) {
         isGeminiSpeaking = false;
         setWakeState(false);
+        if (porcupineWorker) {
+          isListeningForWake = true;
+        }
       }
     } catch(err) {
       console.warn("WebSocket parse error", err);
@@ -590,16 +650,19 @@ function connectGeminiLive() {
   };
 }
 
-let playbackQueue = [];
-let isPlayingPcm = false;
-let currentPlaybackSource = null;
-
-// Quick base64 to Float32 AudioBuffer and schedule
 function playGeminiAudio(base64Str) {
+  if (!liveAudioContext) {
+    liveAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  }
+  if (liveAudioContext.state === 'suspended') {
+    liveAudioContext.resume();
+  }
   isGeminiSpeaking = true;
   const binaryStr = atob(base64Str);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
+  const len = binaryStr.length;
+  const alignedLen = len - (len % 2);
+  const bytes = new Uint8Array(alignedLen);
+  for (let i = 0; i < alignedLen; i++) {
     bytes[i] = binaryStr.charCodeAt(i);
   }
   
@@ -636,45 +699,24 @@ async function processPlaybackQueue() {
   currentPlaybackSource.start();
 }
 
-  try {
-    liveMicStream = await navigator.mediaDevices.getUserMedia({ 
-      audio: { 
-        echoCancellation: true, 
-        noiseSuppression: true, 
-        autoGainControl: true 
-      } 
-    });
-    
-    // Gemini API requires 16000 Hz. We set the AudioContext natively to 16kHz so the browser handles resampling!
-    liveAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-    
-    const blob = new Blob([audioWorkletCode], { type: 'application/javascript' });
-    const workletUrl = URL.createObjectURL(blob);
-    
-    await liveAudioContext.audioWorklet.addModule(workletUrl);
-    
-    const source = liveAudioContext.createMediaStreamSource(liveMicStream);
-    pcmWorkletNode = new AudioWorkletNode(liveAudioContext, 'pcm-processor');
-    
-    pcmWorkletNode.port.onmessage = (e) => {
-      const pcmBuffer = e.data; 
-      // Pass to Wake Word / Gemini WebSockets here later...
-      handlePcmData(pcmBuffer);
-    };
-    
-    source.connect(pcmWorkletNode);
-    pcmWorkletNode.connect(liveAudioContext.destination); // Required to keep worklet alive in some browsers
-    
-    console.log("16kHz PCM audio pipeline active.");
-  } catch (err) {
-    console.error("Mic initialization failed", err);
-  }
-}
+let pcmAccumulator = [];
 
 function handlePcmData(pcmBuffer) {
+  const int16Chunk = new Int16Array(pcmBuffer);
+
   if (isListeningForWake && porcupineWorker) {
-    // Porcupine expects Int16Array
-    porcupineWorker.postMessage({ command: "process", inputFrame: new Int16Array(pcmBuffer) });
+    for (let i = 0; i < int16Chunk.length; i++) {
+      pcmAccumulator.push(int16Chunk[i]);
+    }
+    const frameLength = porcupineWorker.frameLength || 512;
+    while (pcmAccumulator.length >= frameLength) {
+      const frame = new Int16Array(pcmAccumulator.splice(0, frameLength));
+      try {
+        porcupineWorker.process(frame);
+      } catch (err) {
+        console.warn("Porcupine process error:", err);
+      }
+    }
   } else if (isAwake && geminiSocket && geminiSocket.readyState === WebSocket.OPEN && !isGeminiSpeaking) {
     // Gemini expects base64 PCM via JSON
     const b64 = arrayBufferToBase64(pcmBuffer);
@@ -689,7 +731,6 @@ function handlePcmData(pcmBuffer) {
   }
 }
 
-
 let porcupineWorker = null;
 let isListeningForWake = false;
 
@@ -697,20 +738,23 @@ async function initPorcupine() {
   if (!CONFIG.pvKey || typeof PorcupineWeb === 'undefined') return;
   
   try {
-    // Using the built-in wake word 'Porcupine'. (Custom wake words require a custom base64 model from Picovoice console)
+    const keyword = PorcupineWeb.BuiltInKeyword.Jarvis || PorcupineWeb.BuiltInKeyword.Porcupine;
+    const model = { publicPath: "porcupine_params.pv", customWritePath: "porcupine_model" };
     porcupineWorker = await PorcupineWeb.PorcupineWorker.create(
       CONFIG.pvKey,
-      PorcupineWeb.BuiltInKeyword.Porcupine,
+      keyword,
       porcupineKeywordCallback,
+      model,
       { processErrorCallback: (err) => console.error("Porcupine error:", err) }
     );
     
     isListeningForWake = true;
-    console.log("Porcupine Wake Word initialized. Waiting for 'Porcupine'...");
+    console.log("Porcupine Wake Word initialized for:", keyword);
   } catch(err) {
     console.error("Failed to init Porcupine:", err);
   }
 }
+
 
 function porcupineKeywordCallback(keyword) {
   console.log(`Wake word detected: ${keyword}`);
@@ -718,7 +762,7 @@ function porcupineKeywordCallback(keyword) {
   
   // If we are currently playing audio from a previous turn, halt it
   if (currentPlaybackSource) {
-    currentPlaybackSource.stop();
+    try { currentPlaybackSource.stop(); } catch(e) {}
     playbackQueue = [];
     isPlayingPcm = false;
   }
@@ -736,7 +780,41 @@ function porcupineKeywordCallback(keyword) {
   }
   
   setWakeState(true);
-  assistantResponse.textContent = "Listening via Live API...";
+  assistantResponse.textContent = "Listening via Gemini Live API...";
+  userSpeech.textContent = "Streaming 16kHz audio input...";
+  const fullResp = document.getElementById('full-assistant-response');
+  if (fullResp) fullResp.textContent = "Listening via Gemini Live API...";
+  const fullSpeech = document.getElementById('full-user-speech');
+  if (fullSpeech) fullSpeech.textContent = "Streaming 16kHz audio input...";
+}
+
+async function triggerManualWake(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (!micPipelineReady && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    await initMicPipeline();
+    await initPorcupine();
+    if (micPipelineReady) {
+      if (btnAuthMic) btnAuthMic.style.display = 'none';
+      if (btnTriggerAi) btnTriggerAi.style.display = 'block';
+      if (fullOrbTrigger) fullOrbTrigger.style.pointerEvents = 'auto';
+    }
+  }
+  if (!CONFIG.geminiKey) {
+    setWakeState(true);
+    assistantResponse.textContent = "Add a Google Gemini API Key in Settings for Live Assistant.";
+    return;
+  }
+  if (!isAwake) {
+    porcupineKeywordCallback("Manual Trigger");
+  } else {
+    setWakeState(false);
+    if (porcupineWorker) isListeningForWake = true;
+    if (currentPlaybackSource) {
+      try { currentPlaybackSource.stop(); } catch(e) {}
+      playbackQueue = [];
+      isPlayingPcm = false;
+    }
+  }
 }
 
 function arrayBufferToBase64(buffer) {
@@ -794,23 +872,89 @@ function setWakeState(awake) {
   if (awake) {
     voiceIndicator.classList.add('listening');
     orbTrigger.classList.add('listening');
+    if (fullOrbTrigger) fullOrbTrigger.classList.add('listening');
     playHarmonicChime();
     trigger3DShockwave();
-
-    assistantResponse.textContent = "Cognitive link open. Listening...";
-    userSpeech.textContent = "Listening for prompt...";
 
     clearTimeout(wakeTimer);
     wakeTimer = setTimeout(() => {
       setWakeState(false);
       assistantResponse.textContent = `"Awaiting wake trigger '${CONFIG.wakeWord}' or tactile engagement."`;
       userSpeech.textContent = "Passive acoustic standby.";
-    }, 8000);
+      const fullResp = document.getElementById('full-assistant-response');
+      if (fullResp) fullResp.textContent = "Ready for Multimodal Intelligence.";
+      const fullSpeech = document.getElementById('full-user-speech');
+      if (fullSpeech) fullSpeech.textContent = "Continuous Audio & Microphone active.";
+      if (porcupineWorker) isListeningForWake = true;
+    }, 12000);
   } else {
     voiceIndicator.classList.remove('listening');
     orbTrigger.classList.remove('listening');
+    if (fullOrbTrigger) fullOrbTrigger.classList.remove('listening');
     clearTimeout(wakeTimer);
   }
+}
+
+// Google Gemini Cloud REST API Engine
+async function queryGeminiCloud(prompt, apiKey, isTest = false) {
+  let contents;
+  if (isTest) {
+    contents = [{
+      role: "user",
+      parts: [{ text: prompt }]
+    }];
+  } else {
+    conversationHistory.push({
+      role: "user",
+      parts: [{ text: prompt }]
+    });
+    if (conversationHistory.length > 6) {
+      conversationHistory = conversationHistory.slice(-6);
+    }
+    contents = conversationHistory;
+  }
+
+  const payload = {
+    systemInstruction: {
+      parts: [{
+        text: "You are Jarvis/Aether, the ultra-smart AI on an ambient desk appliance. Answer in 1 or 2 concise, natural spoken sentences. Avoid markdown or bullets, optimize for text-to-speech listening."
+      }]
+    },
+    contents: contents
+  };
+
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  let lastErr = null;
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.error) {
+        throw new Error(data.error.message || `API error ${data.error.code}`);
+      }
+      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+        const text = data.candidates[0].content.parts[0].text.trim();
+        if (!isTest) {
+          conversationHistory.push({
+            role: "model",
+            parts: [{ text }]
+          });
+        }
+        return text;
+      }
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (!isTest && conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'user') {
+    conversationHistory.pop();
+  }
+  throw lastErr || new Error('Invalid response structure from Gemini API');
 }
 
 // Local Command Interpreter
@@ -912,15 +1056,8 @@ async function executeCognitiveQuery(cmd) {
 }
 
 // Orb Click Listener
-orbTrigger.addEventListener('click', () => {
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    // Fire and forget, don't await, Android WebView might hang the promise silently
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then(stream => stream.getTracks().forEach(track => track.stop()))
-      .catch(err => console.warn('Mic check failed', err));
-  }
-  setWakeState(true);
-});
+orbTrigger.addEventListener('click', triggerManualWake);
+
 
 // Kinetic Action Chips
 document.querySelectorAll('.k-chip, .k-cmd-chip').forEach(chip => {
@@ -940,15 +1077,24 @@ function updateSettingsStatus() {
     geminiStatus.textContent = "Unset";
     geminiStatus.classList.remove('active');
   }
+  if (pvStatus) {
+    if (CONFIG.pvKey) {
+      pvStatus.textContent = "Connected";
+      pvStatus.classList.add('active');
+    } else {
+      pvStatus.textContent = "Unset";
+      pvStatus.classList.remove('active');
+    }
+  }
 }
 
 btnSettings.addEventListener('click', () => {
   cfgWakeword.value = CONFIG.wakeWord;
   cfgGeminiKey.value = CONFIG.geminiKey;
+  if (cfgPvKey) cfgPvKey.value = CONFIG.pvKey;
   cfgCity.value = CONFIG.customCity;
   cfg24h.checked = CONFIG.use24h;
   updateSettingsStatus();
-
   settingsModal.classList.add('open');
   gsap.from('.modal-pane', {
     y: 30,
@@ -988,7 +1134,7 @@ btnTestGemini.addEventListener('click', async () => {
   }
   btnTestGemini.textContent = "VERIFYING...";
   try {
-    const res = await queryGeminiCloud("Hello", testKey);
+    const res = await queryGeminiCloud("Hello", testKey, true);
     btnTestGemini.textContent = "VERIFIED ✓";
     geminiStatus.textContent = "Active";
     geminiStatus.classList.add('active');
@@ -1001,11 +1147,13 @@ btnTestGemini.addEventListener('click', async () => {
 btnSaveSettings.addEventListener('click', () => {
   CONFIG.wakeWord = cfgWakeword.value.trim() || 'Hey Jarvis';
   CONFIG.geminiKey = cfgGeminiKey.value.trim();
+  if (cfgPvKey) CONFIG.pvKey = cfgPvKey.value.trim();
   CONFIG.customCity = cfgCity.value.trim();
   CONFIG.use24h = cfg24h.checked;
 
   localStorage.setItem('aether_wakeword', CONFIG.wakeWord);
   localStorage.setItem('aether_gemini_key', CONFIG.geminiKey);
+  localStorage.setItem('aether_pv_key', CONFIG.pvKey);
   localStorage.setItem('aether_city', CONFIG.customCity);
   localStorage.setItem('aether_24h', CONFIG.use24h);
 
@@ -1013,6 +1161,10 @@ btnSaveSettings.addEventListener('click', () => {
   settingsModal.classList.remove('open');
   updateClock();
   fetchAtmosphere();
+
+  if (CONFIG.pvKey && micPipelineReady && !porcupineWorker) {
+    initPorcupine();
+  }
 });
 /* ==========================================================================
    9. Multi-Screen Pagination Engine
@@ -1159,20 +1311,6 @@ if (btnAuthMic) {
     }
   });
 
-  
-  // New manual wake button hooks right into our new wake function
-  function triggerManualWake(e) {
-    e.preventDefault();
-    if (!CONFIG.geminiKey) {
-      alert("Please set Gemini API Key in Settings first.");
-      return;
-    }
-    
-    // If we're not currently awake, simulate a wake word hit
-    if (!isAwake) {
-      porcupineKeywordCallback("Manual Trigger");
-    }
-  }
   
   btnTriggerAi.addEventListener('click', triggerManualWake);
   
