@@ -39,7 +39,8 @@ const CONFIG = {
   customCity: localStorage.getItem('aether_city') || '',
   use24h: localStorage.getItem('aether_24h') === 'true',
   volume: parseFloat(localStorage.getItem('aether_volume') || '0.8'),
-  theme: localStorage.getItem('aether_theme') || 'dark'
+  theme: localStorage.getItem('aether_theme') || 'dark',
+  cartoKey: localStorage.getItem('aether_carto_key') || ''
 };
 
 // Global State
@@ -1223,6 +1224,13 @@ if (screensContainer && dots.length > 0) {
       screensContainer.scrollLeft = index * width;
     }
     updatePagination();
+    if (index === 1) {
+      if (!map) {
+        initAtmosphereMap();
+      } else {
+        setTimeout(() => map.invalidateSize(), 300);
+      }
+    }
   }
 
   // Robust JS swipe handler for Android Kiosk WebViews
@@ -1257,23 +1265,36 @@ let weatherLayer;
 function initAtmosphereMap() {
   if (typeof L === 'undefined') return;
   const container = document.getElementById('map-container');
-  if (!container) return;
+  if (!container || map) return;
 
   map = L.map('map-container', {
     zoomControl: false,
     attributionControl: false
   }).setView([40.7128, -74.0060], 6);
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19
-  }).addTo(map);
+  if (CONFIG.cartoKey) {
+    L.tileLayer(`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CONFIG.cartoKey}`, {
+      maxZoom: 19
+    }).addTo(map);
+  } else {
+    // High-performance, zero-auth Dark Canvas basemap (no watermark)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 16
+    }).addTo(map);
+
+    // Reference labels & boundaries overlay
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 16,
+      zIndex: 5
+    }).addTo(map);
+  }
 
   setWeatherLayer('radar');
 
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(pos => {
       map.setView([pos.coords.latitude, pos.coords.longitude], 7);
-    });
+    }, (err) => console.warn('Map geolocation fallback', err));
   }
 }
 
@@ -1289,18 +1310,29 @@ function setWeatherLayer(type) {
       let layerPath = '';
       
       if (type === 'radar') {
-        const past = data.radar.past;
-        layerPath = `${past[past.length - 1].path}/256/{z}/{x}/{y}/2/1_1.png`;
+        const past = data.radar && data.radar.past;
+        if (past && past.length > 0) {
+          layerPath = `${past[past.length - 1].path}/256/{z}/{x}/{y}/2/1_1.png`;
+        }
       } else if (type === 'clouds' || type === 'temp') {
-        // Use infrared satellite for clouds
-        const infrared = data.satellite.infrared;
-        layerPath = `${infrared[infrared.length - 1].path}/256/{z}/{x}/{y}/0/0_0.png`;
+        const infrared = data.satellite && data.satellite.infrared;
+        if (infrared && infrared.length > 0) {
+          layerPath = `${infrared[infrared.length - 1].path}/256/{z}/{x}/{y}/0/0_0.png`;
+        } else {
+          // Graceful fallback to radar if infrared satellite cache is empty
+          const past = data.radar && data.radar.past;
+          if (past && past.length > 0) {
+            layerPath = `${past[past.length - 1].path}/256/{z}/{x}/{y}/2/1_1.png`;
+          }
+        }
       }
       
-      weatherLayer = L.tileLayer(`${host}${layerPath}`, {
-        opacity: 0.65,
-        zIndex: 10
-      }).addTo(map);
+      if (layerPath) {
+        weatherLayer = L.tileLayer(`${host}${layerPath}`, {
+          opacity: 0.75,
+          zIndex: 10
+        }).addTo(map);
+      }
     }).catch(err => console.warn('Radar fetch failed', err));
 }
 
