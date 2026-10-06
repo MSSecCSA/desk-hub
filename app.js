@@ -1279,12 +1279,14 @@ function initAtmosphereMap() {
   } else {
     // High-performance, zero-auth Dark Canvas basemap (no watermark)
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 16
+      maxNativeZoom: 16,
+      maxZoom: 18
     }).addTo(map);
 
     // Reference labels & boundaries overlay
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 16,
+      maxNativeZoom: 16,
+      maxZoom: 18,
       zIndex: 5
     }).addTo(map);
   }
